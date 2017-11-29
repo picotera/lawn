@@ -9,6 +9,8 @@
 !**/*.yml
 !**/*.yaml
 !**/*.mak
+!**/*.pdf
+!**/*.tex
 /site
 style.c
 
