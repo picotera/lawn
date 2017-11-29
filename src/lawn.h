@@ -29,7 +29,7 @@ typedef struct element_queue{
 } ElementQueue;
 
 /***************************
- *  Lawn Definition
+ *    Lawn Definition
  ***************************/
 
 typedef struct lawn{
@@ -39,7 +39,7 @@ typedef struct lawn{
 
 
 /***************************
- *     CONSTRUCTOR/ DESTRUCTOR
+ * CONSTRUCTOR/ DESTRUCTOR
  ***************************/
 Lawn* newLawn(void);
 
@@ -92,7 +92,7 @@ ElementQueue* pop_expired(Lawn* dehy);
 
 /**********************
  *  
- *      LIST UTILS
+ *      QUEUE UTILS
  * 
  **********************/
 
