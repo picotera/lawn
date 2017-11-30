@@ -47,4 +47,4 @@ Using these rules, and by holding a map of sorted TTL queues we can now:
 
 * Push in O(1) since pulling the TTL Queue from the map takes O(1) and inserting at the head of this queue is also O(1).
 * Pull in O(1).
-* Poll in O(n) - where n is minimized to just the number of **expired** elements (that's an avarge of O(1)!), notice we regard the number of different TTLs to be a constant and << total number of timers elements in the system.
+* Poll in O(n) - n=max(x,t) where x is minimized to just the number of **expired** elements and t is the number of different TTLs, which is assumed to be roughly a constant and << total number of timers elements in the system (that's an avarge of O(1)!). 
