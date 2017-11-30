@@ -257,7 +257,6 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
 
     //create new node
     ElementQueueNode* new_node = NewNode(element, len, ttl_ms);
-    // printttNode(new_node);
     // put node in correct ttl queue
     sprintf(ttl_str, "%llu", new_node->ttl_queue);
     ElementQueue* new_queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
@@ -267,9 +266,7 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
         TrieMap_Add(lawn->timeout_queues, ttl_str, strlen(ttl_str), new_queue, NULL);
     }
     queuePush(new_queue, new_node);
-    // printf("YYYYYYYYY\n");
     _addNodeToMapping(lawn, new_node);
-    // printf("ZZZZZZZZZZZ\n");
     return DHY_OK;
    
 }
@@ -314,9 +311,10 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
     TrieMapIterator * itr = TrieMap_Iterate(lawn->timeout_queues, "", 0);
     char* queue_name;
     tm_len_t len;
-    ElementQueue* queue;
+    void* queue_pointer;
     ElementQueueNode* retval = NULL;
-    while (TrieMapIterator_Next(itr, &queue_name, &len, &queue)) {
+    while (TrieMapIterator_Next(itr, &queue_name, &len, &queue_pointer)) {
+        ElementQueue* queue = (ElementQueue*)queue_pointer;
         if (queue != NULL && queue->len > 0 && queue->head != NULL) {
             // printf("LOOKING AT %s\n", queue->head->element);
             if ((retval == NULL) || (queue->head->expiration < retval->expiration))
@@ -363,10 +361,11 @@ ElementQueue* pop_expired(Lawn* lawn) {
     TrieMapIterator * itr = TrieMap_Iterate(lawn->timeout_queues, "", 0);
     char* queue_name;
     tm_len_t len;
-    ElementQueue* queue;
+    void* queue_pointer;
     ElementQueue* retval = newQueue();
     mstime_t now = current_time_ms() + DHY_LATANCY_MS;
-    while (TrieMapIterator_Next(itr, &queue_name, &len, &queue)) {
+    while (TrieMapIterator_Next(itr, &queue_name, &len, &queue_pointer)) {
+        ElementQueue* queue = (ElementQueue*)queue_pointer;
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {
             if ((retval == NULL) || (queue->head->expiration <= now))
                 queuePush(retval, _queuePop(lawn, queue));
