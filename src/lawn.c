@@ -217,11 +217,8 @@ void * swapCB(void *oldval, void *newval){
 
 void _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
 {
-    //  printttNode(node);
-    //  printf("");
     if (node != NULL)
         TrieMap_Add(lawn->element_nodes, node->element, node->element_len, node , swapCB);
-    // printf("XXXXXXXXX\n");
 }
 
 /************************************
@@ -307,7 +304,6 @@ int del_element_exp(Lawn* lawn, char* key){
 
 
 ElementQueueNode* _get_next_node(Lawn* lawn){
-    //  printf("IN NEXT NODE\n");
     TrieMapIterator * itr = TrieMap_Iterate(lawn->timeout_queues, "", 0);
     char* queue_name;
     tm_len_t len;
@@ -316,7 +312,6 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
     while (TrieMapIterator_Next(itr, &queue_name, &len, &queue_pointer)) {
         ElementQueue* queue = (ElementQueue*)queue_pointer;
         if (queue != NULL && queue->len > 0 && queue->head != NULL) {
-            // printf("LOOKING AT %s\n", queue->head->element);
             if ((retval == NULL) || (queue->head->expiration < retval->expiration))
                 retval = queue->head;
         }
