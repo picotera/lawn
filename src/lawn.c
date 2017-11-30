@@ -114,8 +114,7 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
         if (lawn != NULL) {
             char ttl_str[256];
             sprintf(ttl_str, "%llu", node->ttl_queue);
-            TrieMap_Delete(lawn->timeout_queues, ttl_str, strlen(ttl_str), NULL);
-            // freeQueue(queue)
+            TrieMap_Delete(lawn->timeout_queues, ttl_str, strlen(ttl_str), freeQueueCB);
         }
         return;
     }
@@ -195,25 +194,24 @@ Lawn* newLawn(void)
     return lawn;
 }
 
+void voidCB(void *elem) { return; }
+
+void * swapCB(void *oldval, void *newval){ return newval; } 
+
+void freeQueueCB(void *elem) { freeQueue((ElementQueue*)elem); }
+
 void freeLawn(Lawn* lawn)
 {
-    TrieMap_Free(lawn->timeout_queues, NULL);// freeQueue);
-    TrieMap_Free(lawn->element_nodes, NULL);
+    TrieMap_Free(lawn->element_nodes, voidCB);
+    TrieMap_Free(lawn->timeout_queues, freeQueueCB);
 
     free(lawn);
 }
-
-void voidCB(void *elem) { return; }
 
 void _removeNodeFromMapping(Lawn* lawn, ElementQueueNode* node)
 {
     TrieMap_Delete(lawn->element_nodes, node->element, node->element_len, voidCB);
 }
-
-
-void * swapCB(void *oldval, void *newval){
-    return newval;
-} 
 
 void _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
 {
