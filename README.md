@@ -8,7 +8,7 @@
 
 
 
-**Lawn** is a high troughput data structure that is based on the assumption that most timers are set to a small set of TTLs to boost overall DS performance. It can assist when handling a large set of timers with relativly small variance in TTL by effectivly using minimal queues to store timer data. Achieving O(1) for insertion and deletion of timers, and O(t) for expiration where is the maximum betwwn the number of different TTLs (which is assumed to be roughly a fixed size set) and expired items (this means a mean case of O(1)!).
+**Lawn** is a high troughput data structure that is based on the assumption that most timers are set to a small set of TTLs to boost overall DS performance. It can assist when handling a large set of timers with relativly small variance in TTL by effectivly using minimal queues to store timer data. Achieving O(1) for insertion and deletion of timers, and O(1) for tiemr expiration.
 
 Lawns can be used for anything from keeping track of multipile real-time TTLs of elements, to implement a straightforward dehydration system as depicted in the article "[Fast Data](https://goo.gl/DDFFPO)". 
 
