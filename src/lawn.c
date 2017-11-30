@@ -33,6 +33,18 @@
 
 
 /***************************
+ *    Trie Utilities
+ ***************************/
+
+
+void voidCB(void *elem) { return; }
+
+void * swapCB(void *oldval, void *newval){ return newval; }
+
+void freeQueueCB(void *elem) { freeQueue((ElementQueue*)elem); }
+
+
+/***************************
  *       Queue Utilities
  ***************************/
 
@@ -193,12 +205,6 @@ Lawn* newLawn(void)
 
     return lawn;
 }
-
-void voidCB(void *elem) { return; }
-
-void * swapCB(void *oldval, void *newval){ return newval; } 
-
-void freeQueueCB(void *elem) { freeQueue((ElementQueue*)elem); }
 
 void freeLawn(Lawn* lawn)
 {
