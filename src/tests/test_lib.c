@@ -155,16 +155,7 @@ int test_next_at() {
 
   mstime_t ttl_ms4 = 400000;
   char* key4 = "next_at_test_key_4";
-//    set_element_ttl(store, key1, strlen(key1), ttl_ms1);
 
-//    set_element_ttl(store, key2, strlen(key2), ttl_ms2);
-
-//    set_element_ttl(store, key3, strlen(key3), ttl_ms3);
-// // printf("XXXXTESTTESTTEST\n");
-//    del_element_exp(store, key2);
-//   set_element_ttl(store, key4, strlen(key4), ttl_ms4);
-//     return SUCCESS;
-  
   if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != DHY_ERR) &&
       (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != DHY_ERR) &&
       (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != DHY_ERR) &&
@@ -230,7 +221,6 @@ int test_pop_next() {
 
 // ElementQueue* pop_expired(Lawn* lawn)
 int test_pop_expired() {
-// ElementQueue* pop_expired(Lawn* lawn)
   int retval = FAIL;
   Lawn* store = newLawn();
 
@@ -245,13 +235,11 @@ int test_pop_expired() {
   
   mstime_t ttl_ms4 = 4000;
   char* key4 = "pop_next_test_key_4";
-
   if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != DHY_ERR) &&
       (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != DHY_ERR) &&
       (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != DHY_ERR) &&
       (del_element_exp(store, key2) != DHY_ERR) &&
       (set_element_ttl(store, key4, strlen(key4), ttl_ms4) != DHY_ERR)) {
-
     ElementQueue* queue = pop_expired(store);
     if (queue->len != 0){
       printf("ERROR: expected empty queue but found to have %ld items\n", queue->len);
@@ -260,7 +248,6 @@ int test_pop_expired() {
       freeQueue(queue);
       sleep(4);
       queue = pop_expired(store);
-      // printf("LIST: \n\n\n%s\n\n",printQueue(queue));
       int expected_len = 2;
       if (queue->len != expected_len){
         printf("ERROR: expected queue of len %d but found to have %ld items\n", expected_len, queue->len);
@@ -270,11 +257,11 @@ int test_pop_expired() {
         char* expexted_elem1 = key3;
         ElementQueueNode* node2 = queuePop(queue);
         char* expexted_elem2 = key4;
-        if (node1->element != expexted_elem1){
+        if (strcmp(node1->element, expexted_elem1) != 0){
           printf("ERROR: expected element to contain %s but found %s\n", expexted_elem1, node1->element);
           retval = FAIL;
         }
-        if (node1->element != expexted_elem2){
+        if (strcmp(node2->element, expexted_elem2) != 0){
           printf("ERROR: expected element to contain %s but found %s\n", expexted_elem2, node2->element);
           retval = FAIL;
         }
@@ -350,13 +337,14 @@ int main(int argc, char* argv[]) {
     ++num_of_passed_tests;
   }
 
-  // if (test_pop_expired() == FAIL) {
-  //   ++num_of_failed_tests;
-  //   printf("FAILED on pop_expired\n");
-  // } else {
-  //   printf("PASSED pop_expired\n");
-  //   ++num_of_passed_tests;
-  // }
+  printf("-> pop_expired\n");
+  if (test_pop_expired() == FAIL) {
+    ++num_of_failed_tests;
+    printf("FAILED on pop_expired\n");
+  } else {
+    printf("PASSED\n");
+    ++num_of_passed_tests;
+  }
 
   double total_time_ms = current_time_ms() - start_time;
   printf("\n-------------\n");

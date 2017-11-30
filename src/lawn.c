@@ -197,7 +197,7 @@ Lawn* newLawn(void)
 
 void freeLawn(Lawn* lawn)
 {
-    TrieMap_Free(lawn->timeout_queues, freeQueue);
+    TrieMap_Free(lawn->timeout_queues, NULL);// freeQueue);
     TrieMap_Free(lawn->element_nodes, NULL);
 
     free(lawn);
@@ -370,6 +370,8 @@ ElementQueue* pop_expired(Lawn* lawn) {
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {
             if ((retval == NULL) || (queue->head->expiration <= now))
                 queuePush(retval, _queuePop(lawn, queue));
+            else
+                break;
         }
     }
     TrieMapIterator_Free(itr);
