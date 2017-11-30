@@ -1,7 +1,8 @@
 [![GitHub version](https://img.shields.io/github/release/tamarlabs/rede.svg?style=flat-square)](https://github.com/TamarLabs/ReDe/releases/latest)
 [![issues count](https://img.shields.io/github/issues/tamarlabs/rede.svg?style=flat-square)](https://github.com/TamarLabs/ReDe/issues)
 [![Build Status](https://img.shields.io/travis/TamarLabs/ReDe/master.svg?style=flat-square)](https://travis-ci.org/TamarLabs/ReDe)
-<h1>  ReDe - The <img src="https://upload.wikimedia.org/wikipedia/en/6/6b/Redis_Logo.svg" alt="redis" height="47" align="top"/> Element Dehydration Module</h1>
+
+<h1>  Lawn - a Low Latancy Timer Data structure</h1>
 
 :rocket:**TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with unlimited timer span with no degrigation in performance with large sets of timers**
 
