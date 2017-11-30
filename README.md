@@ -2,9 +2,9 @@
 [![issues count](https://img.shields.io/github/issues/tamarlabs/rede.svg?style=flat-square)](https://github.com/TamarLabs/ReDe/issues)
 [![Build Status](https://img.shields.io/travis/TamarLabs/ReDe/master.svg?style=flat-square)](https://travis-ci.org/TamarLabs/ReDe)
 -->
-<h1>  Lawn - a Low Latancy Timer Data Structure for Large Scale systems</h1>
+<h1>  Lawn - Low Latancy Timer Data-Structure for Large Scale Systems</h1>
 
-:rocket:**TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with unlimited timer span with no degrigation in performance with large sets of timers**
+:rocket:**TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with unlimited timer span with no degrigation in performance over a large set of timers**
 
 
 
