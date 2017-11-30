@@ -11,6 +11,9 @@
 !**/*.mak
 !**/*.pdf
 !**/*.tex
+!**/*.bib
+!**/*.ps
+!**/*.cls
 /site
 style.c
 
