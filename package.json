@@ -1,0 +1,9 @@
+{
+	  "name": "lawn",
+	  "version": "0.0.1",
+	  "repo": "picotera/lawn",
+	  "description": "Unbound Low Latancy Timer Data-Structure for Large Scale Systems",
+	  "keywords": ["lawn", "timer", "ttl", "stream", "stream-proccessing", "timer-wheel", "real-time"],
+	  "license": "Apache2",
+	  "src": ["src/lawn.c", "src/lawn.h"]
+}

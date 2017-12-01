@@ -1,0 +1,7 @@
+
+language: c
+compiler: gcc
+dist: trusty
+sudo: required
+install: make distclean
+script: make test
