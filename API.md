@@ -47,17 +47,12 @@ Remove and return the element with the closest expiration datetime
 return a queue of all exired element nodes.
 
 
-## QUEUE UTILITIES
-
-
-
-
-
-
+## Queue Utilities
 
 `void freeQueue(ElementQueue* queue);`
 
 Free all data and memory of a queue retuned from the `pop_expired` method.
+
 
 
 `void queuePush(ElementQueue* queue, ElementQueueNode* node);`
@@ -65,12 +60,14 @@ Free all data and memory of a queue retuned from the `pop_expired` method.
 Add a given `ElementQueueNode` to a queue retuned from the `pop_expired` method.
 
 
+
 `ElementQueueNode* queuePop(ElementQueue* queue);`
 
 Remove and return the first `ElementQueueNode` from a queue retuned from the `pop_expired` method.
 
 
-## ELEMENT NODE UTILITIES
+
+## Element Node Utilities
 
 `ElementQueueNode* NewNode(char* element, size_t element_len, mstime_t ttl);`
 

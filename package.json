@@ -5,5 +5,7 @@
 	  "description": "Unbound Low Latancy Timer Data-Structure for Large Scale Systems",
 	  "keywords": ["lawn", "timer", "ttl", "stream", "stream-proccessing", "timer-wheel", "real-time"],
 	  "license": "Apache2",
-	  "src": ["src/lawn.c", "src/lawn.h"]
+	  "src": ["src/lawn.c", "src/lawn.h",
+		  "src/utils/millisecond_time.c","src/utils/millisecond_time.h",
+		  "src/trie/triemap.c","src/trie/triemap.h"]
 }
