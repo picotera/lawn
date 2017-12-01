@@ -2,7 +2,7 @@
 
 <h1>  Lawn - Low Latancy Timer Data-Structure for Large Scale Systems</h1>
 
-:rocket:**TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with unlimited timer span with no degrigation in performance over a large set of timers**
+:rocket:**TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with unlimited timer span with no degrigation in performance over a large set of timers *[with this API](docs/API.md).***
 
 
 
