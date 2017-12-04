@@ -240,7 +240,7 @@ size_t ttl_count(Lawn* lawn){
 
 /*
  * Insert ttl for a new key or update an existing one
- * @return DHY_OK on success, DHY_ERR on error
+ * @return LAWN_OK on success, LAWN_ERR on error
  */
 int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
     char ttl_str[256];
@@ -268,7 +268,7 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
     }
     queuePush(new_queue, new_node);
     _addNodeToMapping(lawn, new_node);
-    return DHY_OK;
+    return LAWN_OK;
    
 }
 
@@ -288,7 +288,7 @@ mstime_t get_element_exp(Lawn* lawn, char* key){
 
 /*
  * Remove TTL from the lawn for the given key
- * @return DHY_OK
+ * @return LAWN_OK
  */
 int del_element_exp(Lawn* lawn, char* key){
     char ttl_str[256];
@@ -303,7 +303,7 @@ int del_element_exp(Lawn* lawn, char* key){
         freeNode(node);
     } 
 
-    return DHY_OK;
+    return LAWN_OK;
 }
 
 
@@ -336,11 +336,11 @@ mstime_t next_at(Lawn* lawn){
 
 
 /*
- * Remove the element with the closest expiration datetime from the lawn and return it's key
- * @return a pointer to a new string containng the key of the element with closest 
+ * Remove the element with the closest expiration datetime from the lawn and return it
+ * @return a pointer to the node containing the element with closest 
  * expiration datetime or NULL if the lawn is empty.
  */
-char* pop_next(Lawn* lawn) {
+ElementQueueNode* pop_next(Lawn* lawn) {
     ElementQueueNode* next_node = _get_next_node(lawn);
         
     if (next_node != NULL) {
@@ -350,8 +350,7 @@ char* pop_next(Lawn* lawn) {
         char* retval = strndup(next_node->element, next_node->element_len);
         _queuePull(lawn, queue, next_node);
         _removeNodeFromMapping(lawn, next_node);
-        freeNode(next_node);
-        return retval;
+        return next_node;
     }
     return NULL;
 }
@@ -362,7 +361,7 @@ ElementQueue* pop_expired(Lawn* lawn) {
     tm_len_t len;
     void* queue_pointer;
     ElementQueue* retval = newQueue();
-    mstime_t now = current_time_ms() + DHY_LATANCY_MS;
+    mstime_t now = current_time_ms() + LAWN_LATANCY_MS;
     while (TrieMapIterator_Next(itr, &queue_name, &len, &queue_pointer)) {
         ElementQueue* queue = (ElementQueue*)queue_pointer;
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {

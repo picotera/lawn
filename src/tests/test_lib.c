@@ -72,7 +72,7 @@ int constructor_distructore_test() {
 
 /*
  * Insert expiration for a new key or update an existing one
- * @return DHY_OK on success, DHY_ERR on error
+ * @return LAWN_OK on success, LAWN_ERR on error
  */
 // int set_element_ttl(Lawn* store, char* key, mstime_t ttl_ms);
 int test_set_element_ttl() {
@@ -81,7 +81,7 @@ int test_set_element_ttl() {
   mstime_t expected = current_time_ms() + ttl_ms;
   char* key = "set_get_test_key";
   Lawn* store = newLawn();
-  if (set_element_ttl(store, key, strlen(key), ttl_ms) == DHY_ERR) return FAIL;
+  if (set_element_ttl(store, key, strlen(key), ttl_ms) == LAWN_ERR) return FAIL;
   retval = SUCCESS;
 
   freeLawn(store);
@@ -100,7 +100,7 @@ int test_set_get_element_exp() {
   mstime_t expected = current_time_ms() + ttl_ms;
   char* key = "set_get_test_key";
   Lawn* store = newLawn();
-  if (set_element_ttl(store, key, strlen(key), ttl_ms) == DHY_ERR) return FAIL;
+  if (set_element_ttl(store, key, strlen(key), ttl_ms) == LAWN_ERR) return FAIL;
   mstime_t saved_ms = get_element_exp(store, key);
   if (saved_ms != expected) {
     printf("ERROR: expected %llu but found %llu\n", expected, saved_ms);
@@ -114,7 +114,7 @@ int test_set_get_element_exp() {
 
 /*
  * Remove expiration from the data store for the given key
- * @return DHY_OK
+ * @return LAWN_OK
  */
 // int del_element_exp(Lawn* store, char* key);
 int test_del_element_exp() {
@@ -123,8 +123,8 @@ int test_del_element_exp() {
   mstime_t expected = -1;
   char* key = "del_test_key";
   Lawn* store = newLawn();
-  if (set_element_ttl(store, key, strlen(key), ttl_ms) == DHY_ERR) return FAIL;
-  if (del_element_exp(store, key) == DHY_ERR) return FAIL;
+  if (set_element_ttl(store, key, strlen(key), ttl_ms) == LAWN_ERR) return FAIL;
+  if (del_element_exp(store, key) == LAWN_ERR) return FAIL;
   mstime_t saved_ms = get_element_exp(store, key);
   if (saved_ms != expected) {
     printf("ERROR: expected %llu but found %llu\n", expected, saved_ms);
@@ -156,11 +156,11 @@ int test_next_at() {
   mstime_t ttl_ms4 = 400000;
   char* key4 = "next_at_test_key_4";
 
-  if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != DHY_ERR) &&
-      (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != DHY_ERR) &&
-      (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != DHY_ERR) &&
-      (del_element_exp(store, key2) != DHY_ERR) &&
-      (set_element_ttl(store, key4, strlen(key4), ttl_ms4) != DHY_ERR)) {
+  if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != LAWN_ERR) &&
+      (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != LAWN_ERR) &&
+      (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != LAWN_ERR) &&
+      (del_element_exp(store, key2) != LAWN_ERR) &&
+      (set_element_ttl(store, key4, strlen(key4), ttl_ms4) != LAWN_ERR)) {
     mstime_t expected = current_time_ms() + ttl_ms3;
     mstime_t saved_ms = next_at(store);
     if (saved_ms != expected) {
@@ -192,13 +192,15 @@ int test_pop_next() {
   mstime_t ttl_ms3 = 3000;
   char* key3 = "pop_next_test_key_3";
 
-  if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != DHY_ERR) &&
-      (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != DHY_ERR) &&
-      (del_element_exp(store, key2) != DHY_ERR) &&
-      (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != DHY_ERR)) {
+  if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != LAWN_ERR) &&
+      (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != LAWN_ERR) &&
+      (del_element_exp(store, key2) != LAWN_ERR) &&
+      (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != LAWN_ERR)) {
 
     char* expected = key3;
-    char* actual = pop_next(store);
+
+    ElementQueueNode* actual_node = pop_next(store);
+    char* actual = actual_node->element; 
     if (strcmp(expected, actual)) {
       printf("ERROR: expected \'%s\' but found \'%s\'\n", expected, actual);
       retval = FAIL;
@@ -212,7 +214,7 @@ int test_pop_next() {
       } else
         retval = SUCCESS;
     }
-    free(actual);
+    freNode(actual_node);
   }
   freeLawn(store);
   return retval;
@@ -235,11 +237,11 @@ int test_pop_expired() {
   
   mstime_t ttl_ms4 = 4000;
   char* key4 = "pop_next_test_key_4";
-  if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != DHY_ERR) &&
-      (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != DHY_ERR) &&
-      (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != DHY_ERR) &&
-      (del_element_exp(store, key2) != DHY_ERR) &&
-      (set_element_ttl(store, key4, strlen(key4), ttl_ms4) != DHY_ERR)) {
+  if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != LAWN_ERR) &&
+      (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != LAWN_ERR) &&
+      (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != LAWN_ERR) &&
+      (del_element_exp(store, key2) != LAWN_ERR) &&
+      (set_element_ttl(store, key4, strlen(key4), ttl_ms4) != LAWN_ERR)) {
     ElementQueue* queue = pop_expired(store);
     if (queue->len != 0){
       printf("ERROR: expected empty queue but found to have %ld items\n", queue->len);

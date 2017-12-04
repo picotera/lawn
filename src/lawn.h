@@ -24,10 +24,10 @@
 #include "trie/triemap.h"
 #include "utils/millisecond_time.h"
 
-#define DHY_OK 0
-#define DHY_ERR 1
+#define LAWN_OK 0
+#define LAWN_ERR 1
 
-#define DHY_LATANCY_MS 1 // elements will be poped prematurly at most this time
+#define LAWN_LATANCY_MS 1 // elements will be poped prematurly at most this time
 
 /***************************
  *  Linked Queue Definitions
@@ -76,7 +76,7 @@ size_t ttl_count(Lawn* dehy);
 
 /*
  * Insert ttl for a new key or update an existing one
- * @return DHY_OK on success, DHY_ERR on error
+ * @return LAWN_OK on success, LAWN_ERR on error
  */
 int set_element_ttl(Lawn* dehy, char* key, size_t len, mstime_t ttl_ms);
 
@@ -88,7 +88,7 @@ mstime_t get_element_exp(Lawn* dehy, char* key);
 
 /*
  * Remove TTL from the lawn for the given key
- * @return DHY_OK
+ * @return LAWN_OK
  */
 int del_element_exp(Lawn* dehy, char* key);
 
@@ -98,10 +98,11 @@ int del_element_exp(Lawn* dehy, char* key);
 mstime_t next_at(Lawn* dehy);
 
 /*
- * Remove the element with the closest expiration datetime from the lawn and return it's key
- * @return the key of the element with closest expiration datetime
+ * Remove the element with the closest expiration datetime from the lawn and return it
+ * @return a pointer to the node containing the element with closest 
+ * expiration datetime or NULL if the lawn is empty.
  */
-char* pop_next(Lawn* dehy);
+ElementQueueNode* pop_next(Lawn* dehy);
 
 /*
  * @return a queue of all exired element nodes.

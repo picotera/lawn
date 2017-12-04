@@ -25,7 +25,7 @@ Return the closest element expiration datetime (in milliseconds), or -1 if DS is
 
 `int set_element_ttl(Lawn* dehy, char* element, size_t len, mstime_t ttl_ms);`
 
-Insert ttl for a new element or update an existing one. Returns DHY_OK on success, DHY_ERR on error.
+Insert ttl for a new element or update an existing one. Returns LAWN_OK on success, LAWN_ERR on error.
 
 `mstime_t get_element_exp(Lawn* dehy, char* element);`
 
@@ -34,12 +34,12 @@ Get the expiration value for the given element. Returns datetime of expiration (
 
 `int del_element_exp(Lawn* dehy, char* element);`
 
-Remove TTL from the lawn for the given element. Returns `DHY_OK`
+Remove TTL from the lawn for the given element. Returns `LAWN_OK`
 
 
-`char* pop_next(Lawn* dehy);`
+`ElementQueueNode* pop_next(Lawn* dehy);`
 
-Remove and return the element with the closest expiration datetime
+Remove and return the node for the element with the closest expiration datetime
 
 
 `ElementQueue* pop_expired(Lawn* dehy);`
