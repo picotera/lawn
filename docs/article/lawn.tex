@@ -56,11 +56,50 @@ In similar manner to previous work\cite{TW}, the model discussed in this paper s
  Since payload and callback behavior varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks is highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
 
 
+
 \section{Timer Store Implementations}
+
+
+\subsection{Queue}
+
+\subsubsection{Algorithm :}
+
+\paragraph{Assumpions and Constraints :}
+Due to the manner in which the store is traversed in search of expired triggers, this algorithm would benefit greatly from low TTL variance (minimize $max(TTL)-min(TTL$).
+
+\paragraph{Space and Runtime Complexity :}
+
+\subsubsection{Varients :}
+
+\paragraph{Sorted Queue :}
+
+\paragraph{Versioned Hash :}
+most popular
+
+
+
+\subsection{Timer Wheel}
+
+\subsubsection{Assumpions and Constraints :}
+
+\subsubsection{Space and Runtime Complexity :}
+
+\subsubsection{Varients :}
+
+\paragraph{Hashed :}
+prevelent for high load systems, including Unix kernel
+
+
 
 \section{The Lawn Data Structure}
 
-\subsection{Intended Use and }
+\subsection{Intended Use Case}
+
+\subsection{Algorithm}
+
+\paragraph{Assumpions and Constraints :}
+
+\paragraph{Space and Runtime Complexity :}
 
 \section{Comparison and Reflection}
 
@@ -72,5 +111,3 @@ In similar manner to previous work\cite{TW}, the model discussed in this paper s
 \bibliography{lawn}
 
 \end{document}
-
-
