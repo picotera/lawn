@@ -214,7 +214,7 @@ int test_pop_next() {
       } else
         retval = SUCCESS;
     }
-    freNode(actual_node);
+    freeNode(actual_node);
   }
   freeLawn(store);
   return retval;
