@@ -105,55 +105,9 @@ the following notation would be used for all runtime and space complexity demarc
 for breverty and readabuility sake this paper will notate the 
 % \textit{StartTimer}, \textit{PerTickBookkeeping}, \textit{DeleteTimer}, \textit{TimerExpired}
 
-\section{Existing Timer Schemes}
+\section{State of the art - The Timer Wheel Schemes}
 
-
-\subsection{Naive}
-
-usually a implemented by list, array, or vector of some sort
-\paragraph{Assumptions and Constraints :}
-
-\subsubsection{Algorithm :}
-
-Due to the manner in which the store is traversed in search of expired would benefit greatly from low TTL variance. Close TTLs m
-
-\complexity{1}{n}{n}{1}{a naive}
-
-
-
-
-\subsubsection{Varients :}
-
-\paragraph{Queue :}
-a bit better, makes searching faster and is very popular
-
-
-\subsection{Sorted}
-
-\paragraph{Assumptions and Constraints :}
-
-\subsubsection{Algorithm :}
-
-Due to the manner in which the store is traversed in search of expired would benefit greatly from low TTL variance. Close TTLs m
-
-%as it based on heap where:
-%start = insert
-%bookkeeping = peek
-%del = search + delete 
-%expire = delete
-
-
-\complexity{log(n)}{1}{n}{log(n)}{the queued}
-
-
-
-\subsubsection{Versioned Hash variant:}
-This variant hel
-\complexity{log(n)}{1}{1}{1}{the version-hashed queued}
-
-
-
-\subsection{Timer Wheel}
+%\subsection{Timer Wheel}
 
 \subsubsection{Assumptions and Constraints :}
 
