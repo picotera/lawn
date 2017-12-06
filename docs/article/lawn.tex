@@ -53,28 +53,85 @@ In similar manner to previous work\cite{TW}, the model discussed in this paper s
 
 \vspace{5mm}
 
- Since payload and callback behavior varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks is highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
+Since payload and callback behavior varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks is highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
+
+% \vspace{5mm}
+
+% \paragraph{Performance Notation}, for breverty and readabuility sake this paper will notate the 
+% \textit{StartTimer}, \textit{PerTickBookkeeping}, \textit{DeleteTimer}, \textit{TimerExpired}
+
+\section{Exsiting Timer Store Schemes}
 
 
+\subsection{Naive}
 
-\section{Timer Store Implementations}
-
-
-\subsection{Queue}
+usually a implemented by list, array, or vector of some sort
+\paragraph{Assumpions and Constraints :}
 
 \subsubsection{Algorithm :}
 
-\paragraph{Assumpions and Constraints :}
-Due to the manner in which the store is traversed in search of expired triggers, this algorithm would benefit greatly from low TTL variance (minimize $max(TTL)-min(TTL$).
+Due to the manner in which the store is traversed in search of expired would benefit greatly from low TTL variance. Close TTLs m
 
-\paragraph{Space and Runtime Complexity :}
+\begin{table}[h!]
+	\begin{center}
+		
+		\begin{tabular}{l|c|c}
+			\textfb{Operation} & \textfb{Worst Case} & \textfb{Avarage Case} \\
+			\hline
+			\textit{StartTimer} & $O(?)$ & $O(?)$
+			\textit{PerTickBookkeeping} & $O(?)$ & $O(?)$
+			\textit{DeleteTimer} & $O(?)$ & $O(?)$
+			\textit{TimerExpired} & $O(?)$ & $O(?)$
+		\end{tabular}
+		\caption{Runtime Complexity for the queue timer store scheme}
+		\label{tab:table1}
+	\end{center}
+\end{table}
+
+space complexity
+
+
+
+\subsubsection{Varients :}
+
+\paragraph{Queue :}
+a bit better, makes searching faster
+
+
+\subsection{Sorted}
+
+\paragraph{Assumpions and Constraints :}
+
+\subsubsection{Algorithm :}
+
+Due to the manner in which the store is traversed in search of expired would benefit greatly from low TTL variance. Close TTLs m
+
+\begin{table}[h!]
+	\begin{center}
+		
+		\begin{tabular}{l|c|c}
+			\textfb{Operation} & \textfb{Worst Case} & \textfb{Avarage Case} \\
+			\hline
+			\textit{StartTimer} & $O(?)$ & $O(?)$
+			\textit{PerTickBookkeeping} & $O(?)$ & $O(?)$
+			\textit{DeleteTimer} & $O(?)$ & $O(?)$
+			\textit{TimerExpired} & $O(?)$ & $O(?)$
+		\end{tabular}
+		\caption{Runtime Complexity for the queue timer store scheme}
+		\label{tab:table1}
+	\end{center}
+\end{table}
+
+space complexity
+
+
 
 \subsubsection{Varients :}
 
 \paragraph{Sorted Queue :}
 
 \paragraph{Versioned Hash :}
-most popular
+very popular improves complexity from $ $
 
 
 
@@ -82,7 +139,26 @@ most popular
 
 \subsubsection{Assumpions and Constraints :}
 
-\subsubsection{Space and Runtime Complexity :}
+\subsubsection{Algorithm :}
+
+\begin{table}[h!]
+	\begin{center}
+		
+		\begin{tabular}{l|c|c}
+			\textfb{Operation} & \textfb{Worst Case} & \textfb{Avarage Case} \\
+			\hline
+			\textit{StartTimer} & $O(?)$ & $O(?)$
+			\textit{PerTickBookkeeping} & $O(?)$ & $O(?)$
+			\textit{DeleteTimer} & $O(?)$ & $O(?)$
+			\textit{TimerExpired} & $O(?)$ & $O(?)$
+		\end{tabular}
+		\caption{Runtime Complexity for the queue timer store scheme}
+		\label{tab:table1}
+	\end{center}
+\end{table}
+
+space complexity
+
 
 \subsubsection{Varients :}
 
@@ -111,3 +187,5 @@ prevelent for high load systems, including Unix kernel
 \bibliography{lawn}
 
 \end{document}
+
+
