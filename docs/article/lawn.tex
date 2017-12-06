@@ -6,6 +6,41 @@
 }
 \newcommand{\backtrackarrow}{\rotatebox[origin=c]{-90}{$\curvearrowleft$}}
 
+\newcommand{\complexity}[5]{
+\begin{table}[h!]
+	\begin{center}
+		\begin{tabular}{l|c}
+			\textbf{Operation} & \textbf{Complexity} \\
+			\hline
+			\textit{StartTimer} & $O(#1)$  \\
+			\textit{PerTick} & $O(#2)$ \\
+			\textit{DeleteTimer} & $O(#3)$ \\
+			\textit{TimerExpired} & $O(#4)$ \\
+		\end{tabular}
+		\caption{Time Complexity for #5 scheme}
+%		\label{tab:table1}
+	\end{center}
+\end{table}
+}
+
+\newcommand{\advcomplexity}[9]{
+\begin{table}[h!]
+	\begin{center}
+		\begin{tabular}{l|c|c}
+			%& \multicolumn{2}{c}{\textbf{Case}} \\
+			\textbf{Operation} & \textbf{Worst} & \textbf{Average} \\
+			\hline
+			\textit{StartTimer} & $O(#1)$ & $O(#2)$ \\
+			\textit{PerTick} & $O(#3)$ & $O(#4)$ \\
+			\textit{DeleteTimer} & $O(#5)$ & $O(#6)$ \\
+			\textit{TimerExpired} & $O(#7)$ & $O(#8)$ \\
+		\end{tabular}
+		\caption{Runtime Complexity for #9 scheme}
+		\label{tab:table1}
+	\end{center}
+\end{table}
+}
+
 \title{Lawn - an Unbound Low Latancy Timer Data Structure for Large Scale Systems} 
 
 \author{
@@ -53,129 +88,100 @@ In similar manner to previous work\cite{TW}, the model discussed in this paper s
 
 \vspace{5mm}
 
-Since payload and callback behavior varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks is highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
+Since payload and callback behavior varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks can be done in a discrete, highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
 
 % \vspace{5mm}
 
-% \paragraph{Performance Notation}, for breverty and readabuility sake this paper will notate the 
+\subsection{Performance Notation}
+
+the following notation would be used for all runtime and space complexity demarcations: \\
+\indent\textbf{n :}The total number of timers in the data store.\\
+\indent\textbf{t :}The total number of different TTLs in the data store. \\
+
+\vspace{15mm}
+
+
+
+for breverty and readabuility sake this paper will notate the 
 % \textit{StartTimer}, \textit{PerTickBookkeeping}, \textit{DeleteTimer}, \textit{TimerExpired}
 
-\section{Exsiting Timer Store Schemes}
+\section{Existing Timer Schemes}
 
 
 \subsection{Naive}
 
 usually a implemented by list, array, or vector of some sort
-\paragraph{Assumpions and Constraints :}
+\paragraph{Assumptions and Constraints :}
 
 \subsubsection{Algorithm :}
 
 Due to the manner in which the store is traversed in search of expired would benefit greatly from low TTL variance. Close TTLs m
 
-\begin{table}[h!]
-	\begin{center}
-		
-		\begin{tabular}{l|c|c}
-			\textfb{Operation} & \textfb{Worst Case} & \textfb{Avarage Case} \\
-			\hline
-			\textit{StartTimer} & $O(?)$ & $O(?)$
-			\textit{PerTickBookkeeping} & $O(?)$ & $O(?)$
-			\textit{DeleteTimer} & $O(?)$ & $O(?)$
-			\textit{TimerExpired} & $O(?)$ & $O(?)$
-		\end{tabular}
-		\caption{Runtime Complexity for the queue timer store scheme}
-		\label{tab:table1}
-	\end{center}
-\end{table}
+\complexity{1}{n}{n}{1}{a naive}
 
-space complexity
 
 
 
 \subsubsection{Varients :}
 
 \paragraph{Queue :}
-a bit better, makes searching faster
+a bit better, makes searching faster and is very popular
 
 
 \subsection{Sorted}
 
-\paragraph{Assumpions and Constraints :}
+\paragraph{Assumptions and Constraints :}
 
 \subsubsection{Algorithm :}
 
 Due to the manner in which the store is traversed in search of expired would benefit greatly from low TTL variance. Close TTLs m
 
-\begin{table}[h!]
-	\begin{center}
-		
-		\begin{tabular}{l|c|c}
-			\textfb{Operation} & \textfb{Worst Case} & \textfb{Avarage Case} \\
-			\hline
-			\textit{StartTimer} & $O(?)$ & $O(?)$
-			\textit{PerTickBookkeeping} & $O(?)$ & $O(?)$
-			\textit{DeleteTimer} & $O(?)$ & $O(?)$
-			\textit{TimerExpired} & $O(?)$ & $O(?)$
-		\end{tabular}
-		\caption{Runtime Complexity for the queue timer store scheme}
-		\label{tab:table1}
-	\end{center}
-\end{table}
+%as it based on heap where:
+%start = insert
+%bookkeeping = peek
+%del = search + delete 
+%expire = delete
 
-space complexity
+
+\complexity{log(n)}{1}{n}{log(n)}{the queued}
 
 
 
-\subsubsection{Varients :}
-
-\paragraph{Sorted Queue :}
-
-\paragraph{Versioned Hash :}
-very popular improves complexity from $ $
+\subsubsection{Versioned Hash variant:}
+This variant hel
+\complexity{log(n)}{1}{1}{1}{the version-hashed queued}
 
 
 
 \subsection{Timer Wheel}
 
-\subsubsection{Assumpions and Constraints :}
+\subsubsection{Assumptions and Constraints :}
 
 \subsubsection{Algorithm :}
 
-\begin{table}[h!]
-	\begin{center}
-		
-		\begin{tabular}{l|c|c}
-			\textfb{Operation} & \textfb{Worst Case} & \textfb{Avarage Case} \\
-			\hline
-			\textit{StartTimer} & $O(?)$ & $O(?)$
-			\textit{PerTickBookkeeping} & $O(?)$ & $O(?)$
-			\textit{DeleteTimer} & $O(?)$ & $O(?)$
-			\textit{TimerExpired} & $O(?)$ & $O(?)$
-		\end{tabular}
-		\caption{Runtime Complexity for the queue timer store scheme}
-		\label{tab:table1}
-	\end{center}
-\end{table}
-
-space complexity
+\complexity{1}{b}{c}{d}{e}{f}{g}{h}{the Timer Wheel}
 
 
-\subsubsection{Varients :}
+\subsubsection{Variants :}
 
 \paragraph{Hashed :}
-prevelent for high load systems, including Unix kernel
+prevalent for high load systems, including Unix kernel
 
 
 
 \section{The Lawn Data Structure}
 
-\subsection{Intended Use Case}
+\subsection{Intended Use Cases}
+
+\paragraph{Assumptions and Constraints :}
 
 \subsection{Algorithm}
 
-\paragraph{Assumpions and Constraints :}
+
 
 \paragraph{Space and Runtime Complexity :}
+
+\advcomplexity{1}{1}{t}{1}{1}{1}{1}{1}{the Lawn}
 
 \section{Comparison and Reflection}
 
