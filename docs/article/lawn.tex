@@ -41,7 +41,7 @@
 \end{table}
 }
 
-\title{Lawn - an Unbound Low Latancy Timer Data Structure for Large Scale Systems} 
+\title{Lawn: an Unbound Low Latency Timer Data Structures for Large Scale Systems} 
 
 \author{
 	\textsc{Adam Lev-Libfeld} \\[1ex]
@@ -105,15 +105,24 @@ the following notation would be used for all runtime and space complexity demarc
 for breverty and readabuility sake this paper will notate the 
 % \textit{StartTimer}, \textit{PerTickBookkeeping}, \textit{DeleteTimer}, \textit{TimerExpired}
 
-\section{State of the art - The Timer Wheel Schemes}
+\section{Method}
+this is how i will compare things
 
-%\subsection{Timer Wheel}
+\section{Previous Work in light of Scale}
+
+\subsection{Lists, Queues \& Hash Maps}
+simple and popular
+
+
+\subsection{Timer Wheel}
+best, but bounded
 
 \subsubsection{Assumptions and Constraints :}
 
 \subsubsection{Algorithm :}
 
-\complexity{1}{b}{c}{d}{e}{f}{g}{h}{the Timer Wheel}
+
+\advcomplexity{1}{1}{1}{1}{1}{1}{n}{1}{the Hashed Timer Wheel}
 
 
 \subsubsection{Variants :}
@@ -149,3 +158,4 @@ prevalent for high load systems, including Unix kernel
 \end{document}
 
 
+c
