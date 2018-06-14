@@ -155,16 +155,16 @@ int test_next_at() {
 
   mstime_t ttl_ms4 = 400000;
   char* key4 = "next_at_test_key_4";
-
+  
   if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != LAWN_ERR) &&
       (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != LAWN_ERR) &&
       (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != LAWN_ERR) &&
       (del_element_exp(store, key2) != LAWN_ERR) &&
-      (set_element_ttl(store, key4, strlen(key4), ttl_ms4) != LAWN_ERR)) {
+      (set_element_ttl(store, key4, strlen(key4), ttl_ms4) != LAWN_ERR)) {  
     mstime_t expected = current_time_ms() + ttl_ms3;
     mstime_t saved_ms = next_at(store);
     if (saved_ms != expected) {
-      printf("ERROR: expected %llu but found %llu\n", expected, saved_ms);
+      printf("ERROR: expected %llu but found %llu (diff: %lld)\n", expected, saved_ms, expected - saved_ms);
       retval = FAIL;
     } else
       retval = SUCCESS;

@@ -55,6 +55,7 @@ typedef struct element_queue{
 typedef struct lawn{
     TrieMap * timeout_queues; //<ttl_queue,ElementQueue>
     TrieMap * element_nodes; //<element_id,node*>
+    mstime_t next_expiration;
 } Lawn;
 
 

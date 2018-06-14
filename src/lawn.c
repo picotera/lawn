@@ -202,6 +202,7 @@ Lawn* newLawn(void)
 
     lawn->timeout_queues = NewTrieMap();
     lawn->element_nodes = NewTrieMap();
+    lawn->next_expiration = 0;
 
     return lawn;
 }
@@ -221,8 +222,28 @@ void _removeNodeFromMapping(Lawn* lawn, ElementQueueNode* node)
 
 void _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
 {
-    if (node != NULL)
+    if (node != NULL){
         TrieMap_Add(lawn->element_nodes, node->element, node->element_len, node , swapCB);
+        if (node->expiration < lawn->next_expiration){
+            lawn->next_expiration = node->expiration;
+}
+    }
+}
+
+void _removeNode(Lawn* lawn, ElementQueueNode* node)
+{
+    char ttl_str[256];
+    sprintf(ttl_str, "%llu", node->ttl_queue);
+    ElementQueue* queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
+    
+    if (node->expiration <= lawn->next_expiration){
+            lawn->next_expiration = 0;
+    }
+
+    if (queue != NULL && queue != TRIEMAP_NOTFOUND){
+        _queuePull(lawn, queue, node);
+        _removeNodeFromMapping(lawn, node);
+    }
 }
 
 /************************************
@@ -243,19 +264,15 @@ size_t ttl_count(Lawn* lawn){
  * @return LAWN_OK on success, LAWN_ERR on error
  */
 int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
-    char ttl_str[256];
-    
     ElementQueueNode* node = TrieMap_Find(lawn->element_nodes, element, len);
 
     if (node != NULL && node != TRIEMAP_NOTFOUND){
-        // remove existing node
-        sprintf(ttl_str, "%llu", node->ttl_queue);
-        ElementQueue* queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
-        _queuePull(lawn, queue, node);
-        _removeNodeFromMapping(lawn, node);
+        // in case that's a duplicate
+        _removeNode(lawn, node);
         freeNode(node);
     } 
 
+    char ttl_str[256];
     //create new node
     ElementQueueNode* new_node = NewNode(element, len, ttl_ms);
     // put node in correct ttl queue
@@ -280,8 +297,9 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
 mstime_t get_element_exp(Lawn* lawn, char* key){
     ElementQueueNode* node = TrieMap_Find(lawn->element_nodes, key, strlen(key));
 
-    if (node != NULL && node != TRIEMAP_NOTFOUND)
+    if (node != NULL && node != TRIEMAP_NOTFOUND){
         return node->expiration;
+    }
     return -1;
 }
 
@@ -291,15 +309,9 @@ mstime_t get_element_exp(Lawn* lawn, char* key){
  * @return LAWN_OK
  */
 int del_element_exp(Lawn* lawn, char* key){
-    char ttl_str[256];
     ElementQueueNode* node = TrieMap_Find(lawn->element_nodes, key, strlen(key));
-
     if (node != NULL && node != TRIEMAP_NOTFOUND){
-        // remove existing node
-        sprintf(ttl_str, "%llu", node->ttl_queue);
-        ElementQueue* queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
-        _queuePull(lawn, queue, node);
-        _removeNodeFromMapping(lawn, node);
+        _removeNode(lawn, node);
         freeNode(node);
     } 
 
@@ -316,8 +328,13 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
     while (TrieMapIterator_Next(itr, &queue_name, &len, &queue_pointer)) {
         ElementQueue* queue = (ElementQueue*)queue_pointer;
         if (queue != NULL && queue->len > 0 && queue->head != NULL) {
-            if ((retval == NULL) || (queue->head->expiration < retval->expiration))
+            if ((retval == NULL) || (queue->head->expiration < retval->expiration)){
                 retval = queue->head;
+                if ((lawn->next_expiration == 0) ||
+                    (queue->head->expiration < lawn->next_expiration)){
+                    lawn->next_expiration = queue->head->expiration;
+                }
+            }
         }
     }
     TrieMapIterator_Free(itr);
@@ -325,13 +342,21 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
 }
 
 /*
- * @return the closest element expiration datetime (in milliseconds), or -1 if DS is empty
+ * @return closest element expiration datetime (in milliseconds), or -1 if empty
  */
 mstime_t next_at(Lawn* lawn){
-    ElementQueueNode* next_node = _get_next_node(lawn);
-    if (next_node != NULL)
-        return next_node->expiration;
-    return -1;
+    
+    // printf("node: %llu next: %llu diff: %lld\n", node->expiration, lawn->next_expiration, node->expiration - lawn->next_expiration);
+    if (lawn->next_expiration == 0){
+        ElementQueueNode* next_node = _get_next_node(lawn);
+        if (next_node == NULL){
+            return -1;
+        }else{
+            lawn->next_expiration = next_node->expiration;
+        }
+    }
+    return lawn->next_expiration;
+    
 }
 
 
@@ -344,31 +369,34 @@ ElementQueueNode* pop_next(Lawn* lawn) {
     ElementQueueNode* next_node = _get_next_node(lawn);
         
     if (next_node != NULL) {
-        char ttl_str[256];
-        sprintf(ttl_str, "%llu", next_node->ttl_queue);
-        ElementQueue* queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
-        char* retval = strndup(next_node->element, next_node->element_len);
-        _queuePull(lawn, queue, next_node);
-        _removeNodeFromMapping(lawn, next_node);
-        return next_node;
+        _removeNode(lawn, next_node);
     }
-    return NULL;
+    return next_node;
 }
 
 ElementQueue* pop_expired(Lawn* lawn) {
+    ElementQueue* retval = newQueue();
+    mstime_t now = current_time_ms() + LAWN_LATANCY_MS;
+    if (now < lawn->next_expiration){
+            return retval;
+    }
     TrieMapIterator * itr = TrieMap_Iterate(lawn->timeout_queues, "", 0);
     char* queue_name;
     tm_len_t len;
     void* queue_pointer;
-    ElementQueue* retval = newQueue();
-    mstime_t now = current_time_ms() + LAWN_LATANCY_MS;
+    
+    
     while (TrieMapIterator_Next(itr, &queue_name, &len, &queue_pointer)) {
         ElementQueue* queue = (ElementQueue*)queue_pointer;
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {
-            if ((retval == NULL) || (queue->head->expiration <= now))
+            if (queue->head->expiration <= now){
                 queuePush(retval, _queuePop(lawn, queue));
-            else
+            }else{
+                if ((lawn->next_expiration == 0) || 
+                    (queue->head->expiration < lawn->next_expiration))
+                    lawn->next_expiration = queue->head->expiration;
                 break;
+            }
         }
     }
     TrieMapIterator_Free(itr);

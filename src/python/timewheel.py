@@ -1,139 +1,191 @@
-/* ###################################################################
- *  Lawn - Low Latancy Timer Data-Structure for Large Scale Systems 
- *  
- *  Autor: Adam Lev-Libfeld (adam@tamarlabs.com) 2017 
- *
- *  TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with 
- *  unlimited timer span with no degrigation in performance over a large set of timers.
- *
- *  Lawn is a high troughput data structure that is based on the assumption 
- *  that most timers are set to a small set of TTLs to boost overall DS 
- *  performance. It can assist when handling a large set of timers with 
- *  relativly small variance in TTL by effectivly using minimal queues 
- *  to store timer data. Achieving O(1) for insertion and deletion of timers, 
- *  and O(1) for tiemr expiration.
- *
- *  Lawn is distributed Under the Apache2 licence 
- *
- * ################################################################### */
- 
- 
-#ifndef DEHYDRATOR_LIB_H
-#define DEHYDRATOR_LIB_H
+class BaseWheel(object):
+    """
+    Base implementation of a timing wheel. In fact, noone forces you to even
+    use time here.
+    """
 
-#include "trie/triemap.h"
-#include "utils/millisecond_time.h"
+    def __init__(self, slots, initial_slot=0):
+        """
+        :type slots: int
+        :param slots: how many slots the wheel will have. Keep in mind that the
+                      furthest slot you can add to is less by one.
+        :type initial_slot: int
+        :param initial_slot: the index of a starting slot. Notice that it will
+                             be fitted into the size of the wheel by ignoring
+                             all full circles.
+        """
+        self.slots = [{} for _ in xrange(slots)]
+        self.position = initial_slot % slots
+        self.size = 0
 
-#define LAWN_OK 0
-#define LAWN_ERR 1
+    def _next_step(self, slots=1):
+        """
+        Will return the index of the Nth following slot.
 
-#define LAWN_LATANCY_MS 1 // elements will be poped prematurly at most this time
+        :type slots: int
+        :param slots: the offset. Default: 1 (so, the index of the very next
+                      slot will be returned)
+        """
+        return (self.position + slots) % len(self.slots)
 
-/***************************
- *  Linked Queue Definitions
- ***************************/
+    def add(self, key, callback, *args, **kwargs):
+        """
+        Add an observed item to the last slot (counting from the current one).
 
-typedef struct element_queue_node{
-    char* element;
-    size_t element_len;
-    mstime_t ttl_queue;
-    mstime_t expiration;
-    struct element_queue_node* next;
-    struct element_queue_node* prev;
-} ElementQueueNode;
+        :param key: any hashable object, that will be used as the key.
+                    Needs to be unique.
+        :param callback: a callable object that will be invoked upon
+                         expiration; args and kwargs will be passed to it.
+        """
+        self.insert(key, len(self.slots) - 1, callback, *args, **kwargs)
 
-typedef struct element_queue{
-    ElementQueueNode* head;
-    ElementQueueNode* tail;
-    size_t len;
-} ElementQueue;
+    def insert(self, key, slot_offset, callback, *args, **kwargs):
+        """
+        Add an observed item to Nth slot (counting from the current one).
 
-/***************************
- *    Lawn Definition
- ***************************/
+        :param key: any hashable object, that will be used as the key.
+                    Needs to be unique.
+        :type slot_offset: int
+        :param slot_offset: specifies which slot, starting with the current
+                            one, will be used.
+        :param callback: a callable object that will be invoked upon
+                         expiration; args and kwargs will be passed to it.
 
-typedef struct lawn{
-    TrieMap * timeout_queues; //<ttl_queue,ElementQueue>
-    TrieMap * element_nodes; //<element_id,node*>
-} Lawn;
+        :raises ValueError: when the provided offset is larger than the size
+                            of the wheel.
+        """
+        if slot_offset <= 0:
+            raise ValueError(
+                'Can\'t insert entries in the past.'
+            )
+
+        if slot_offset >= len(self.slots):
+            raise ValueError(
+                'Cannot add to the {}(st/nd/rd/th) following slot because '
+                'there are only {} slots available.'
+                .format(slot_offset, len(self.slots))
+            )
+        slot = self._next_step(slot_offset)
+        self.slots[slot][key] = (callback, args, kwargs)
+        self.size += 1
+
+    def remove(self, key):
+        """
+        Removes the entry, associated with the key, from the wheel.
+
+        :param key: a hashable object, that was previously added/inserted
+                    into the wheel.
+
+        :raises KeyError: when there's no entry with that key.
+        """
+        for offset in xrange(0, len(self.slots)):
+            slot = self._next_step(offset)
+            if key in self.slots[slot]:
+                self.slots[slot].pop(key)
+                self.size -= 1
+                return
+
+        raise KeyError('Key {} was not found in the wheel.'.format(key))
+
+    def turn(self, slots=1):
+        """
+        Turns the wheel some steps forward. This will result in expiration
+        of any entries that are located in passed slots, starting with the
+        current one. The callbacks will be called here.
+
+        :type slots: int
+        :param slots: specifies how many slots will be passed. Default: 1.
+                      Has to be a non-negative number.
+
+        :raises ValueError: if the requested number of slots is negative.
+        """
+        if slots < 0:
+            raise ValueError('Can\'t turn the wheel backward.')
+
+        for _ in xrange(slots):
+            self._expire(self.position)
+            self.position = self._next_step()
+
+    def _expire(self, slot):
+        """
+        Cleans the specified slot and callbacks for all its contents.
+
+        :type slot: int
+        :param slot: the slot that will be cleaned.
+        """
+        slot_contents = self.slots[slot]
+
+        for (callback, args, kwargs) in slot_contents.itervalues():
+            if callback:
+                callback(*args, **kwargs)
+            self.size -= 1
+
+        slot_contents.clear()
+
+    def reset(self, new_position):
+        """
+        Resets the state: purges all the contents and sets the current position
+        to the provided value.
+
+        :type new_position: int
+        :param new_position: slot index that will be taken as the current one.
+        """
+        for slot in self.slots:
+            slot.clear()
+            
+        self.position = new_position % len(self.slots)
+        self.size = 0
 
 
-/***************************
- * CONSTRUCTOR/ DESTRUCTOR
- ***************************/
-Lawn* newLawn(void);
 
-void freeLawn(Lawn* dehy);
+import time
 
-/************************************
- *   General DS handling functions
- ************************************/
+class TimingWheel(BaseWheel):
+    """
+    A Timing Wheel -- structure that uses time as a force that turns it.
+    This particular implementation uses time.time() as the source of time
+    and creates slot for every second. It's still your job to give it a turn
+    by calling turn() every new second.
+    Also, if you desire to change the discretization or use your own source
+    of time -- you can simply redefine get_step().
+    """
 
-/*
- * @return the number of uniqe ttl entries in the lawn
- */
-size_t ttl_count(Lawn* dehy);
+    def __init__(self, step, slots):
+        """
+        :type step: float
+        :param step: the period of time (in seconds) that occupies one slot
+        :type slots: int
+        :param slots: how many slots the wheel will have. Keep in mind that the
+                      furthest slot you can add to is less by one.
+        """
+        self.step = step
+        self.current_step = self.get_step()
+        super(TimingWheel, self).__init__(slots, self.current_step)
 
-/*
- * Insert ttl for a new key or update an existing one
- * @return LAWN_OK on success, LAWN_ERR on error
- */
-int set_element_ttl(Lawn* dehy, char* key, size_t len, mstime_t ttl_ms);
+    def get_step(self):
+        """
+        The result of this function is used by the class to figure out what
+        time is it. Has to return a whole non-negative number.
+        """
+        return int(time.time() / self.step)
 
-/*
- * Get the expiration value for the given key
- * @return datetime of expiration (in milliseconds) on success, -1 on error
- */
-mstime_t get_element_exp(Lawn* dehy, char* key);
+    def turn(self):
+        """
+        Calling this method makes the wheel to figure out if it needs to turn
+        and turn, if if needs to. It will panic if it finds out that clock
+        tuned backwards.
 
-/*
- * Remove TTL from the lawn for the given key
- * @return LAWN_OK
- */
-int del_element_exp(Lawn* dehy, char* key);
+        :raises ValueError: if time that passed since last check is negative.
+        """
+        new_steps = self.get_step()
+        delta = new_steps - self.current_step
 
-/*
- * @return the closest element expiration datetime (in milliseconds), or -1 if DS is empty
- */
-mstime_t next_at(Lawn* dehy);
+        if delta < 0:
+            raise ValueError(
+                'Time went backwards! Last turn time: {}, current time: {}'
+                .format(self.current_step * self.step, new_steps * self.step)
+            )
 
-/*
- * Remove the element with the closest expiration datetime from the lawn and return it
- * @return a pointer to the node containing the element with closest 
- * expiration datetime or NULL if the lawn is empty.
- */
-ElementQueueNode* pop_next(Lawn* dehy);
-
-/*
- * @return a queue of all exired element nodes.
- */
-ElementQueue* pop_expired(Lawn* dehy);
-
-
-
-/**********************
- *  
- *      QUEUE UTILS
- * 
- **********************/
-
-void freeQueue(ElementQueue* queue);
-
-void queuePush(ElementQueue* queue, ElementQueueNode* node);
-
-ElementQueueNode* queuePop(ElementQueue* queue);
-
-
-
-/***************************
- *  
- *     ELEMENT NODE UTILS
- * 
- ***************************/
-
-ElementQueueNode* NewNode(char* element, size_t element_len, mstime_t ttl);
-
-void freeNode(ElementQueueNode* node);
-
-
-#endif
+        if delta > 0:
+            self.current_step = new_steps
+            super(TimingWheel, self).turn(delta)

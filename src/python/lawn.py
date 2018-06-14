@@ -1,139 +1,124 @@
-/* ###################################################################
- *  Lawn - Low Latancy Timer Data-Structure for Large Scale Systems 
- *  
- *  Autor: Adam Lev-Libfeld (adam@tamarlabs.com) 2017 
- *
- *  TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with 
- *  unlimited timer span with no degrigation in performance over a large set of timers.
- *
- *  Lawn is a high troughput data structure that is based on the assumption 
- *  that most timers are set to a small set of TTLs to boost overall DS 
- *  performance. It can assist when handling a large set of timers with 
- *  relativly small variance in TTL by effectivly using minimal queues 
- *  to store timer data. Achieving O(1) for insertion and deletion of timers, 
- *  and O(1) for tiemr expiration.
- *
- *  Lawn is distributed Under the Apache2 licence 
- *
- * ################################################################### */
- 
- 
-#ifndef DEHYDRATOR_LIB_H
-#define DEHYDRATOR_LIB_H
+def current_time_ms():
+    millis = int(round(time.time() * 1000))
+    return millis
 
-#include "trie/triemap.h"
-#include "utils/millisecond_time.h"
+class Lawn(object):
+    """
+    Base implementation of a timing wheel. In fact, noone forces you to even
+    use time here.
+    """
 
-#define LAWN_OK 0
-#define LAWN_ERR 1
+    def __init__(self, slots, initial_slot=0):
+        """
+        :type slots: int
+        :param slots: how many slots the wheel will have. Keep in mind that the
+                      furthest slot you can add to is less by one.
+        :type initial_slot: int
+        :param initial_slot: the index of a starting slot. Notice that it will
+                             be fitted into the size of the wheel by ignoring
+                             all full circles.
+        """
+        self.slots = [{} for _ in xrange(slots)]
+        self.position = initial_slot % slots
+        self.size = 0
 
-#define LAWN_LATANCY_MS 1 // elements will be poped prematurly at most this time
+    def _next_step(self, slots=1):
+        """
+        Will return the index of the Nth following slot.
 
-/***************************
- *  Linked Queue Definitions
- ***************************/
+        :type slots: int
+        :param slots: the offset. Default: 1 (so, the index of the very next
+                      slot will be returned)
+        """
+        return (self.position + slots) % len(self.slots)
 
-typedef struct element_queue_node{
-    char* element;
-    size_t element_len;
-    mstime_t ttl_queue;
-    mstime_t expiration;
-    struct element_queue_node* next;
-    struct element_queue_node* prev;
-} ElementQueueNode;
+    def add(self, key, callback, *args, **kwargs):
+        """
+        Add an observed item to the last slot (counting from the current one).
 
-typedef struct element_queue{
-    ElementQueueNode* head;
-    ElementQueueNode* tail;
-    size_t len;
-} ElementQueue;
+        :param key: any hashable object, that will be used as the key.
+                    Needs to be unique.
+        :param callback: a callable object that will be invoked upon
+                         expiration; args and kwargs will be passed to it.
+        """
+        self.insert(key, len(self.slots) - 1, callback, *args, **kwargs)
 
-/***************************
- *    Lawn Definition
- ***************************/
+    def insert(self, key, slot_offset, callback, *args, **kwargs):
+        """
+        Add an observed item to Nth slot (counting from the current one).
 
-typedef struct lawn{
-    TrieMap * timeout_queues; //<ttl_queue,ElementQueue>
-    TrieMap * element_nodes; //<element_id,node*>
-} Lawn;
+        :param key: any hashable object, that will be used as the key.
+                    Needs to be unique.
+        :type slot_offset: int
+        :param slot_offset: specifies which slot, starting with the current
+                            one, will be used.
+        :param callback: a callable object that will be invoked upon
+                         expiration; args and kwargs will be passed to it.
 
+        :raises ValueError: when the provided offset is larger than the size
+                            of the wheel.
+        """
+        if slot_offset <= 0:
+            raise ValueError(
+                'Can\'t insert entries in the past.'
+            )
 
-/***************************
- * CONSTRUCTOR/ DESTRUCTOR
- ***************************/
-Lawn* newLawn(void);
+        if slot_offset >= len(self.slots):
+            raise ValueError(
+                'Cannot add to the {}(st/nd/rd/th) following slot because '
+                'there are only {} slots available.'
+                .format(slot_offset, len(self.slots))
+            )
+        slot = self._next_step(slot_offset)
+        self.slots[slot][key] = (callback, args, kwargs)
+        self.size += 1
 
-void freeLawn(Lawn* dehy);
+    def DeleteTimer(self, timer_id):
+        timer = self.timers.get(timer_id)
+        if timer:
+            ttl = timer.ttl
+            q = self.queues.get(ttl)
+            while (q and q[0].expiration <= now):
+                    self.TimerExpired(q[0].id)
+                    del(q[] # TODO: get index of timer in queue and pop it out
 
-/************************************
- *   General DS handling functions
- ************************************/
-
-/*
- * @return the number of uniqe ttl entries in the lawn
- */
-size_t ttl_count(Lawn* dehy);
-
-/*
- * Insert ttl for a new key or update an existing one
- * @return LAWN_OK on success, LAWN_ERR on error
- */
-int set_element_ttl(Lawn* dehy, char* key, size_t len, mstime_t ttl_ms);
-
-/*
- * Get the expiration value for the given key
- * @return datetime of expiration (in milliseconds) on success, -1 on error
- */
-mstime_t get_element_exp(Lawn* dehy, char* key);
-
-/*
- * Remove TTL from the lawn for the given key
- * @return LAWN_OK
- */
-int del_element_exp(Lawn* dehy, char* key);
-
-/*
- * @return the closest element expiration datetime (in milliseconds), or -1 if DS is empty
- */
-mstime_t next_at(Lawn* dehy);
-
-/*
- * Remove the element with the closest expiration datetime from the lawn and return it
- * @return a pointer to the node containing the element with closest 
- * expiration datetime or NULL if the lawn is empty.
- */
-ElementQueueNode* pop_next(Lawn* dehy);
-
-/*
- * @return a queue of all exired element nodes.
- */
-ElementQueue* pop_expired(Lawn* dehy);
+            if (len(q) == 0):
+                del(self.queues[ttl])
+                self.ttls.remove(ttl)
 
 
+            del(self.timers[timer_id])            
+            self.size -= 1
+            return
 
-/**********************
- *  
- *      QUEUE UTILS
- * 
- **********************/
+        raise KeyError('Key {} was not found in the wheel.'.format(key))
 
-void freeQueue(ElementQueue* queue);
+    def PerTickBookkeeping(self):
+        now = current_time_ms()
+        for ttl in self.ttls:
+            q = self.queues.get(ttl)
+            while (q and q[0].expiration <= now):
+                    self.TimerExpired(q[0].id)
+                    q.pop(0)
 
-void queuePush(ElementQueue* queue, ElementQueueNode* node);
-
-ElementQueueNode* queuePop(ElementQueue* queue);
-
-
-
-/***************************
- *  
- *     ELEMENT NODE UTILS
- * 
- ***************************/
-
-ElementQueueNode* NewNode(char* element, size_t element_len, mstime_t ttl);
-
-void freeNode(ElementQueueNode* node);
+            if (len(q) == 0):
+                del(self.queues[ttl])
+                self.ttls.remove(ttl)
 
 
-#endif
+    def TimerExpired(self, timer_id):
+        timer = self.timers.get(timer_id)
+        callback, args, kwargs = timer.payload
+        
+        if callback:
+            callback(*args, **kwargs)
+
+        del(self.timers[timer_id])            
+        self.size -= 1
+
+
+    def clear(self, new_position):
+        for ttl in self.ttls:
+            del(self.queues[ttl])
+        self.timers = {}
+        self.size = 0

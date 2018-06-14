@@ -1,139 +1,160 @@
-/* ###################################################################
- *  Lawn - Low Latancy Timer Data-Structure for Large Scale Systems 
- *  
- *  Autor: Adam Lev-Libfeld (adam@tamarlabs.com) 2017 
- *
- *  TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with 
- *  unlimited timer span with no degrigation in performance over a large set of timers.
- *
- *  Lawn is a high troughput data structure that is based on the assumption 
- *  that most timers are set to a small set of TTLs to boost overall DS 
- *  performance. It can assist when handling a large set of timers with 
- *  relativly small variance in TTL by effectivly using minimal queues 
- *  to store timer data. Achieving O(1) for insertion and deletion of timers, 
- *  and O(1) for tiemr expiration.
- *
- *  Lawn is distributed Under the Apache2 licence 
- *
- * ################################################################### */
- 
- 
-#ifndef DEHYDRATOR_LIB_H
-#define DEHYDRATOR_LIB_H
+#! /usr/bin/python
+import redis
+import time
+import random
+import sys
+import timingwheel
 
-#include "trie/triemap.h"
-#include "utils/millisecond_time.h"
+wheel_total_div = 0
+wheel_max_div = 0
 
-#define LAWN_OK 0
-#define LAWN_ERR 1
-
-#define LAWN_LATANCY_MS 1 // elements will be poped prematurly at most this time
-
-/***************************
- *  Linked Queue Definitions
- ***************************/
-
-typedef struct element_queue_node{
-    char* element;
-    size_t element_len;
-    mstime_t ttl_queue;
-    mstime_t expiration;
-    struct element_queue_node* next;
-    struct element_queue_node* prev;
-} ElementQueueNode;
-
-typedef struct element_queue{
-    ElementQueueNode* head;
-    ElementQueueNode* tail;
-    size_t len;
-} ElementQueue;
-
-/***************************
- *    Lawn Definition
- ***************************/
-
-typedef struct lawn{
-    TrieMap * timeout_queues; //<ttl_queue,ElementQueue>
-    TrieMap * element_nodes; //<element_id,node*>
-} Lawn;
+lawn_total_div = 0
+lawn_max_div = 0
 
 
-/***************************
- * CONSTRUCTOR/ DESTRUCTOR
- ***************************/
-Lawn* newLawn(void);
+# MS_COMPARISON_ACCURACY = 2
 
-void freeLawn(Lawn* dehy);
-
-/************************************
- *   General DS handling functions
- ************************************/
-
-/*
- * @return the number of uniqe ttl entries in the lawn
- */
-size_t ttl_count(Lawn* dehy);
-
-/*
- * Insert ttl for a new key or update an existing one
- * @return LAWN_OK on success, LAWN_ERR on error
- */
-int set_element_ttl(Lawn* dehy, char* key, size_t len, mstime_t ttl_ms);
-
-/*
- * Get the expiration value for the given key
- * @return datetime of expiration (in milliseconds) on success, -1 on error
- */
-mstime_t get_element_exp(Lawn* dehy, char* key);
-
-/*
- * Remove TTL from the lawn for the given key
- * @return LAWN_OK
- */
-int del_element_exp(Lawn* dehy, char* key);
-
-/*
- * @return the closest element expiration datetime (in milliseconds), or -1 if DS is empty
- */
-mstime_t next_at(Lawn* dehy);
-
-/*
- * Remove the element with the closest expiration datetime from the lawn and return it
- * @return a pointer to the node containing the element with closest 
- * expiration datetime or NULL if the lawn is empty.
- */
-ElementQueueNode* pop_next(Lawn* dehy);
-
-/*
- * @return a queue of all exired element nodes.
- */
-ElementQueue* pop_expired(Lawn* dehy);
+# def compare_ms(a, b):
+    # return (abs(a-b) <= MS_COMPARISON_ACCURACY)
 
 
-
-/**********************
- *  
- *      QUEUE UTILS
- * 
- **********************/
-
-void freeQueue(ElementQueue* queue);
-
-void queuePush(ElementQueue* queue, ElementQueueNode* node);
-
-ElementQueueNode* queuePop(ElementQueue* queue);
+def current_time_ms():
+    millis = int(round(time.time() * 1000))
+    return millis
 
 
+def callback(caller, expiration, now=current_time_ms()):
+    div = abs(expiration - now)
+    if (div):
+        if (caller == "wheel"):
+            wheel_total_div += div
+            if (div > wheel_max_div)
+                wheel_max_div = div
+        if (caller == "lawn"):
+            lawn_total_div += div
+            if (div > wheel_max_div)
+                wheel_max_div = div
 
-/***************************
- *  
- *     ELEMENT NODE UTILS
- * 
- ***************************/
 
-ElementQueueNode* NewNode(char* element, size_t element_len, mstime_t ttl);
+def initstore(store_type):
+    if (store_type == "lawn"):
+        return new_lawn()
+    if (store_type == "wheel"):
+        ms_sec = 0.001
+        ten_min_ms = 10 * 60 * 1000
+        return TimingWheel(ms_sec, ten_min_ms)
+    print "ERROR: no such store type ", store_type
+    exit()
 
-void freeNode(ElementQueueNode* node);
+
+def load_test(timers=1000000, timeouts_ms=[1, 2, 4, 16, 32, 100, 200, 1000, 2000, 4000, 10000]):
+    print("starting load tests:")
+    print("store: timers: {}\nTTL count: {}\nTTLs: {}\n".format(store_type, timers, len(timeouts) ,timeouts))
+    
+    ms_sec = 0.001
+    ten_min_ms = 10 * 60 * 1000
+    wheel = TimingWheel(ms_sec, ten_min_ms)
+
+    lawn = Lawn()
 
 
-#endif
+    wheel_total_insert_time_ms = 0
+    wheel_max_insert_time_ms = 0
+
+    lawn_total_insert_time_ms = 0
+    lawn_max_insert_time_ms = 0
+    
+    start = time.time()
+
+    # start timers
+    for i in range(timers):
+        if (i%100000 == 0):
+            print("set {} timers".format(i))
+        ttl_ms = random.choice(timeouts)
+        key = "timer_{}_for_{}_ms".format(i, ttl_ms)
+        wheel_start_insert_time_ms = current_time_ms()
+        wheel.insert(key=key, slot_offset=ttl_ms, callback=callback, caller="wheel", expiration=wheel_start_insert_time_ms+ttl_ms)
+        
+        # collect data 
+        wheel_end_insert_time_ms = current_time_ms()
+        lawn_start_insert_time_ms = wheel_end_insert_time_ms
+        #start a timer in lawn (key=key, ttl=ttl_ms, callback=callback)
+        lawn_end_insert_time_ms = current_time_ms()
+        
+        # log insert times
+        wheel_insert_time_ms = wheel_end_insert_time_ms - wheel_start_insert_time_ms
+        wheel_total_insert_time_ms += wheel_insert_time_ms
+        if (wheel_insert_time_ms > wheel_max_insert_time_ms)
+            wheel_max_insert_time = wheel_insert_time
+
+        lawn_insert_time_ms_ms = lawn_end_insert_time_ms - lawn_start_insert_time_ms
+        lawn_total_insert_time_ms += lawn_insert_time_ms
+        if (lawn_insert_time_ms > lawn_max_insert_time_ms)
+            lawn_max_insert_time_ms = lawn_insert_time_ms
+
+    # print insert report
+    print("All timers inserted!")
+
+    timer_count = wheel.size + lawn.size
+    i = 0
+    while (timer_count):
+        i += 1
+        if (i%5 == 0): # 5 seconds
+            timer_count = wheel.size + lawn.size
+            print("Waiting for remaining {} to expire".format(timer_count))
+        time.sleep(1) #sleep 1 s
+        
+
+    end = time.time()
+    print("All timers expired!")
+
+    print("Wheel  - insert: {} timers in {} ms (max {}), expiration avg div {} ms (max {})".format(
+        timers, 
+        wheel_total_insert_time, 
+        wheel_max_insert_time,
+        wheel_total_div/timers,
+        wheel_max_div
+        ))
+    
+    print("Lawn  - insert: {} timers in {} ms (max {}), expiration avg div {} ms (max {})".format(
+        timers, 
+        lawn_total_insert_time, 
+        lawn_max_insert_time,
+        lawn_total_div/timers,
+        lawn_max_div
+        ))
+
+    return True
+
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    # base_test = False
+    ttl_test = False
+    timer_test = False
+    # port = 6379
+    if not args:
+        # base_test = True
+        timer_test = True
+        ttl_test = True
+
+    else:
+        for i, arg in enumerate(args):
+            if arg == "--port":
+                port = args[i+1]
+
+    # print("starting load tests with redis module connected to port:{}".format(port))
+    # r = redis.StrictRedis(host='localhost', port=port, db=0)
+    # if base_test:
+    #     print("Running base test: some short TTLs, some long")
+    #     load_test(r)
+
+    if timer_test:
+        for timers in range(10, 10000 ,3000000):
+            load_test(timers=timers)
+
+
+    if ttl_test:
+        for ttl_power in range(14):
+            load_test(timeouts_ms=[2**p for p in range(ttl_power)])

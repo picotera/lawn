@@ -134,7 +134,7 @@ The Hashed Timing Wheel was designed to be an all purpose timer storage solution
  
 \subsection{Intended Use Cases}
 
-This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product using a FastData\cite{GP} model. The data structure was to receive inputs from one or more systems that make use of a very limited range of TTLs. 
+This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product using a FastData\cite{GP} model. The data structure was to receive inputs from one or more systems that make use of a very limited range of TTLs in proportion to the number of concurrent timers they use. 
 
 \paragraph{Assumptions and Constraints :}
 As this algorithm was designed to operate as the core of a dehydration utility for a single  FastData application, where TTLs are usually discrete and variance is low it is intended for use under the assumptions that: 
@@ -152,7 +152,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 \begin{algorithm}
 	\caption{The Lawn Data Store \label{alg:lawn}}
 	\begin{algorithmic}[1]
-		\Require{$id$ - a unique identifier of the Timer.\newline $ttl$ - a whole product of $Tick Resolution$ representing the amount of time to wait before triggering the given timer $Payload$ action.\newline $closest\ expiration$ - the minimal (closest) stored trigger expiration time, defaults to -1.}
+		\Require{$id$ - a unique identifier of the Timer.\newline $ttl$ - a whole product of $Tick Resolution$ representing the amount of time to wait before triggering the given timer $Payload$ action.\newline $closest\ expiration$ - the minimal (closest) stored trigger expiration time, defaults to 0.}
 		\Statex
 		\Function{StartTimer}{$id$, $ttl$, $payload$}
 			\Let{$endtime$}{current time + $ttl$} %\Comment{current time: the local time of the system as a whole product of $Tick Resolution$}
@@ -177,7 +177,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 				\State{\textbf{TimerExpired}($T_{id}$)}
 				\Let{$T$}{\textbf{peek}($q$)}
 			\EndWhile
-			\If{$closest\ expiration$ = -1 \newline \textbf{or} $T_{endtime} < closest\ expiration$}
+			\If{$closest\ expiration$ = 0 \newline \textbf{or} $T_{endtime} < closest\ expiration$}
 				\Let{$closest\ expiration$}{$T_{endtime}$}
 			\EndIf
 		\EndFor
@@ -192,7 +192,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 		\Function{DeleteTimer}{$id$}
 			\Let{$T$}{TimerHash[$id$]}
 			\If{$T_{endtime} = closest\ expiration$}
-			\Let{$closest\ expiration$}{-1}
+			\Let{$closest\ expiration$}{0}
 			\EndIf
 			\State{TTLHash[$T_{ttl}$].\textbf{remove}($T$)} 
 			\State{TimerHash.\textbf{remove}($T$)} 
