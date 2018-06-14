@@ -37,7 +37,7 @@
 	\begin{center}
 		\begin{tabular}{l|c|c}
 			%& \multicolumn{2}{c}{\textbf{Case}} \\
-			\textbf{Operation} & \textbf{Worst} & \textbf{Average} \\
+			\textbf{Operation} & \textbf{Worst} & \textbf{Mean} \\
 			\hline
 			\textit{StartTimer} & $O(#1)$ & $O(#2)$ \\
 			\textit{PerTick} & $O(#3)$ & $O(#4)$ \\
@@ -127,14 +127,14 @@ best, but bounded
 The Hashed Timing Wheel was designed to be an all purpose timer storage solution for  
 
 
-\advcomplexity{1}{1}{1}{1}{1}{1}{n}{1}{the Hashed Timing Wheel}
+\advcomplexity{1}{1}{n}{1}{1}{1}{1}{1}{the Hashed Timing Wheel}
 
 
 \section{The Lawn Data Structure}
  
 \subsection{Intended Use Cases}
 
-This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product using a FastData\cite{GP} model. The data structure was to receive inputs from one system only that has a very limited range of TTLs. 
+This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product using a FastData\cite{GP} model. The data structure was to receive inputs from one or more systems that make use of a very limited range of TTLs. 
 
 \paragraph{Assumptions and Constraints :}
 As this algorithm was designed to operate as the core of a dehydration utility for a single  FastData application, where TTLs are usually discrete and variance is low it is intended for use under the assumptions that: 
@@ -144,7 +144,7 @@ As this algorithm was designed to operate as the core of a dehydration utility f
 Assuming that most timers will have a TTL from within a small set of options will enable the application of the core concept behind the algorithm - TTL bucketing. 
 
 \subsubsection{The Data Structure}
-Lawn is, in it's core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set the timers are sorted by time  of arrival - effectively using the set as a queue. Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there should be expired before the current one, since it is already in the queue and have the same TTL.
+Lawn is, in it's core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set the timers are naturally sorted by time  of arrival - effectively using the set as a queue. Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there should be expired before the current one, since it is already in the queue and have the same TTL.
 
 The data structure is analogous to blades of grass (hence the name) - each blade grows from the roots up, and periodically (in our case every $Tick$) the overgrown tops of the grass blades (the expired timers) are maintained by mewing the lawn to a desired level (current time).       
  
@@ -152,35 +152,35 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 \begin{algorithm}
 	\caption{The Lawn Data Store \label{alg:lawn}}
 	\begin{algorithmic}[1]
-		\Require{$id$ - a unique identifier of the Timer.\newline $ttl$ - a whole product of $Tick Resolution$ representing the amount of time to wait before triggering the given timer $Payload$ action.}
+		\Require{$id$ - a unique identifier of the Timer.\newline $ttl$ - a whole product of $Tick Resolution$ representing the amount of time to wait before triggering the given timer $Payload$ action.\newline $closest\ expiration$ - the minimal (closest) stored trigger expiration time, defaults to -1.}
 		\Statex
 		\Function{StartTimer}{$id$, $ttl$, $payload$}
-		\Let{$endtime$}{current time + $ttl$} %\Comment{current time: the local time of the system as a whole product of $Tick Resolution$}
-		\Let{$T$}{$(endtime,ttl,id,payload)$}
-		\Let{TimerHash[$id$]}{$T$}
-		\If{$ttl \notin$ TTLHash}
-		\Let{TTLHash[$ttl$]}{empty queue}
-		\EndIf
-		\State{TTLHash[$ttl$].\textbf{insert}($T$)}
+			\Let{$endtime$}{current time + $ttl$} %\Comment{current time: the local time of the system as a whole product of $Tick Resolution$}
+			\Let{$T$}{$(endtime,ttl,id,payload)$}
+			\Let{TimerHash[$id$]}{$T$}
+			\If{$ttl \notin$ TTLHash}
+				\Let{TTLHash[$ttl$]}{new empty queue}
+			\EndIf
+			\State{TTLHash[$ttl$].\textbf{insert}($T$)}
+			\If{$endtime < closest\ expiration$}
+				\Let{$closest\ expiration$}{$endtime$}
+			\EndIf
 		\EndFunction
 		\Statex
 		\Function{PerTickBookkeeping}{{}}
+		\If{current time $ < closest\ expiration$}
+		\State{\textbf{return}}
+		\EndIf
 		\For{$q \in $TTLHash}
 			\Let{$T$}{\textbf{peek}($q$)}
 			\While{$T_{endtime} < $ current time}
 				\State{\textbf{TimerExpired}($T_{id}$)}
 				\Let{$T$}{\textbf{peek}($q$)}
 			\EndWhile
-		\EndFor
-		\EndFunction
-		\Statex
-		\Function{DeleteTimer}{$id$}
-			\Let{$T$}{TimerHash[$id$]}
-			\State{TTLHash[$T_{ttl}$].\textbf{remove}($T$)} 
-			\State{TimerHash.\textbf{remove}($T$)} 
-			\If{TTLHash[$T_{ttl}$] is empty}
-				\State{TTLHash.\textbf{remove}[$ttl$]}
+			\If{$closest\ expiration$ = -1 \newline \textbf{or} $T_{endtime} < closest\ expiration$}
+				\Let{$closest\ expiration$}{$T_{endtime}$}
 			\EndIf
+		\EndFor
 		\EndFunction
 		\Statex
 		\Function{TimerExpired}{$id$}
@@ -188,6 +188,19 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 			\State{\textbf{DeleteTimer}($T$)} 
 			\State \Return{$T_{payload}$}
 		\EndFunction
+		\Statex
+		\Function{DeleteTimer}{$id$}
+			\Let{$T$}{TimerHash[$id$]}
+			\If{$T_{endtime} = closest\ expiration$}
+			\Let{$closest\ expiration$}{-1}
+			\EndIf
+			\State{TTLHash[$T_{ttl}$].\textbf{remove}($T$)} 
+			\State{TimerHash.\textbf{remove}($T$)} 
+			\If{TTLHash[$T_{ttl}$] is empty}
+				\State{TTLHash.\textbf{remove}[$ttl$]}
+			\EndIf
+		\EndFunction
+		
 	\end{algorithmic}
 \end{algorithm}
 
@@ -213,11 +226,15 @@ Taking into account that each bucket only contains triggers with the same TTL we
 Which, due to the bucket being a sorted set, ordered by $T^{start}$ and triggers being expired by bucket order from old to new is self-evident, and we arrived at a proof.
 
 \subsubsection{Space and Runtime Complexity}
-As this algorithm iterates over all active TTLs (TTLs that are used by timers which did not expire yet) it's works case runtime is lacking even in comparison to more primitive implementations of timer storage. That said, with the added assumption that the TTL set size is constant, or at worst asymptotically smaller then the number of timers\footnote{This assumptions is valid since this data structure is intended for use in service of a single system. Having only one system set timers entails having a limited and expected range of different TTLs, in many cases millions of timers and tens of TTLs}, we can regard this operation as constant time. Moreover, using an active TTLs and known timers list (containing pointers to the allocated memory of the trigger) and a doubly linked list implementation for the queues, it is possible to get runtime complexity to be:
+The Lawn data structure is dense by design, as every timer is stored exactly once, a new trigger will add at most a single TTL bucket and empty TTL buckets are always removed, the data structure footprint will only grow linearly with the number of timers. Hence, overall space complexity is linear to the number of timers ($O(n)$). 
 
-\advcomplexity{1}{1}{n}{1}{1}{1}{1}{1}{the Lawn}
+\advcomplexity{1}{1}{n}{t\approx1}{1}{1}{1}{1}{the Lawn}
 
-Space complexity is $O(n)$ as the data structure footprint grows linearly with the number of timers, since every new trigger adds at most a single new queue and possibly an entry in the timer hash.
+Since the PerTickBookkeeping routine of Lawn iterates over the top item of all known TTL buckets on every expiration cycle (where at least one timer is expected to expire), it's mean case runtime is linear to $t$ (the number of different TTLs) and seems to be lacking even in comparison to more primitive implementations of timer storage. That said, with an added assumption that the TTL set size is roughly constant, or at worst asymptotically smaller then the number of timers\footnote{The assumptions is derived from this data structure being designed around serving other computer systems, which often have either a single TTL used repeatedly, their TTLs chosen from a list of hard coded values or derived from a simple mathematical operation (sliding windows are a good example of this method, using fixed increments or powers of 2 to determine TTLs)}, we can regard this operation as constant time.
+
+
+
+Space complexity is $O(n)$ as , since  and possibly an entry in the timer hash.
 
 \section{Comparison and Reflection}
 
@@ -229,6 +246,9 @@ vs
 Lawn
 
 \section{An Algorithmic View}
+
+\subsubsection{Multiprocessing}
+Highly parallel (splitting by queue) and does not requires a lighter use of semaphores  than other queue based schemes
 
 \section{Conclusion}
 
