@@ -152,11 +152,18 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 \begin{algorithm}
 	\caption{The Lawn Data Store \label{alg:lawn}}
 	\begin{algorithmic}[1]
-		\Require{$id$ - a unique identifier of the Timer.\newline $ttl$ - a whole product of $Tick Resolution$ representing the amount of time to wait before triggering the given timer $Payload$ action.\newline $closest\ expiration$ - the minimal (closest) stored trigger expiration time, defaults to 0.}
+		\Require{\\$id$ - a unique identifier of a timer.\\ $ttl$ - a whole product of $Tick Resolution$ representing the amount of time to wait before triggering the given timer $payload\_action$ action.\\$payload\_action$ - the action to perform upon timer expiration.\\\textit{current time} - the local time of the system as a whole product of $Tick Resolution$}
+		
 		\Statex
-		\Function{StartTimer}{$id$, $ttl$, $payload$}
+		\Function{InitLawn}{{}}
+			\Let{TTLHash}{new empty hash set}
+			\Let{TimerHash}{new empty hash set}
+			\Let{$closest\ expiration$}{0}
+		\EndFunction
+		\Statex
+		\Function{StartTimer}{$id$, $ttl$, $payload\_action$}
 			\Let{$endtime$}{current time + $ttl$} %\Comment{current time: the local time of the system as a whole product of $Tick Resolution$}
-			\Let{$T$}{$(endtime,ttl,id,payload)$}
+			\Let{$T$}{$(endtime,ttl,id,payload\_action)$}
 			\Let{TimerHash[$id$]}{$T$}
 			\If{$ttl \notin$ TTLHash}
 				\Let{TTLHash[$ttl$]}{new empty queue}
@@ -186,7 +193,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 		\Function{TimerExpired}{$id$}
 			\Let{$T$}{TimerHash[$id$]}
 			\State{\textbf{DeleteTimer}($T$)} 
-			\State \Return{$T_{payload}$}
+			\State{\textbf{do} $T_{payload\_action}$}
 		\EndFunction
 		\Statex
 		\Function{DeleteTimer}{$id$}
@@ -228,7 +235,7 @@ Which, due to the bucket being a sorted set, ordered by $T^{start}$ and triggers
 \subsubsection{Space and Runtime Complexity}
 The Lawn data structure is dense by design, as every timer is stored exactly once, a new trigger will add at most a single TTL bucket and empty TTL buckets are always removed, the data structure footprint will only grow linearly with the number of timers. Hence, overall space complexity is linear to the number of timers ($O(n)$). 
 
-\advcomplexity{1}{1}{n}{t\approx1}{1}{1}{1}{1}{the Lawn}
+\advcomplexity{1}{1}{n}{t\sim1}{1}{1}{1}{1}{the Lawn}
 
 Since the PerTickBookkeeping routine of Lawn iterates over the top item of all known TTL buckets on every expiration cycle (where at least one timer is expected to expire), it's mean case runtime is linear to $t$ (the number of different TTLs) and seems to be lacking even in comparison to more primitive implementations of timer storage. That said, with an added assumption that the TTL set size is roughly constant, or at worst asymptotically smaller then the number of timers\footnote{The assumptions is derived from this data structure being designed around serving other computer systems, which often have either a single TTL used repeatedly, their TTLs chosen from a list of hard coded values or derived from a simple mathematical operation (sliding windows are a good example of this method, using fixed increments or powers of 2 to determine TTLs)}, we can regard this operation as constant time.
 
