@@ -267,7 +267,7 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
     ElementQueueNode* node = TrieMap_Find(lawn->element_nodes, element, len);
 
     if (node != NULL && node != TRIEMAP_NOTFOUND){
-        // in case that's a duplicate
+        // in case ther's a duplicate
         _removeNode(lawn, node);
         freeNode(node);
     } 
