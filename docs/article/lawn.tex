@@ -178,11 +178,11 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 		\If{current time $ < closest\ expiration$}
 		\State{\textbf{return}}
 		\EndIf
-		\For{$q \in $TTLHash}
-			\Let{$T$}{\textbf{peek}($q$)}
+		\For{$queue \in $TTLHash}
+			\Let{$T$}{\textbf{peek}($queue$)}
 			\While{$T_{endtime} < $ current time}
 				\State{\textbf{TimerExpired}($T_{id}$)}
-				\Let{$T$}{\textbf{peek}($q$)}
+				\Let{$T$}{\textbf{peek}($queue$)}
 			\EndWhile
 			\If{$closest\ expiration$ = 0 \newline \textbf{or} $T_{endtime} < closest\ expiration$}
 				\Let{$closest\ expiration$}{$T_{endtime}$}
@@ -259,7 +259,7 @@ Highly parallel (splitting by queue) and does not requires a lighter use of sema
 
 \section{Conclusion}
 
-\bibliographystyle{plain}
+\bibliographystyle{acm}
 \bibliography{lawn}
 
 \end{document}
