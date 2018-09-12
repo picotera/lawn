@@ -18,8 +18,8 @@
  * ################################################################### */
  
  
-#ifndef DEHYDRATOR_LIB_H
-#define DEHYDRATOR_LIB_H
+#ifndef LAWN_LIB_H
+#define LAWN_LIB_H
 
 #include "trie/triemap.h"
 #include "utils/millisecond_time.h"
@@ -137,4 +137,4 @@ ElementQueueNode* NewNode(char* element, size_t element_len, mstime_t ttl);
 void freeNode(ElementQueueNode* node);
 
 
-#endif
+#endif // LAWN_LIB_H
