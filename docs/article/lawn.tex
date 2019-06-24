@@ -126,7 +126,7 @@ Being included as an integral part of almost any modern programming language, th
 \subsection{Hashed Timing Wheel}
 The Hashed Timing Wheel was designed to be an all purpose timer storage solution for a unified system of known size and resolution\cite{TW87}\cite{TW}\cite{TWI}. While previous work have shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the solution is commonly to over estimate the needed resolution and/or TTL so to abstain from rebuilding for as long as possible. 
 
-\advcomplexity{1}{1}{n}{1}{1}{1}{1}{1}{the Hashed Timing Wheel}
+\advcomplexity{n}{1}{n}{1}{1}{1}{1}{1}{the Hashed Timing Wheel}
 
 
 \section{The Lawn Data Structure}
@@ -136,7 +136,7 @@ The Hashed Timing Wheel was designed to be an all purpose timer storage solution
 This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product using a FastData\cite{GP} model. The data structure was to receive inputs from one or more systems that make use of a very limited range of TTLs in proportion to the number of concurrent timers they use. 
 
 \paragraph{Assumptions and Constraints :}
-As this algorithm was designed to operate as the core of a dehydration utility for a single  FastData application, where TTLs are usually discrete and variance is low it is intended for use under the assumptions that: 
+As this algorithm was designed to operate as the core of a dehydration utility for a single FastData application, where TTLs are usually discrete and variance is low it is intended for use under the assumptions that: 
 \begin{center}
 	$ Unique\ TTL\ Count \ll Concurrent\ Timer\ Count $
 \end{center}
@@ -210,7 +210,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 	\end{algorithmic}
 \end{algorithm}
 
-\subsubsection{Correctness}
+\subsubsection{Correctness \& Completeness}
 %Given Timer $T$ with TTL $TTL$ that is started (using the \textit{StartTimer} operation) at time $t$,  
 To prove correctness of the algorithm,  it should be demonstrated that for each Timer, it is expired (by the calling the \textit{TimerExpired} operation or it) within \textit{Tick} of it's intended TTL. As the algorithm pivots around the TTL bucketing concept, where in each timer is stored exactly once in it's corresponding bucket, and these buckets are independent of each other, it is sufficient to demonstrating correctness for all timers of a bucket, That is:
 \begin{center}
@@ -244,28 +244,49 @@ This assumption is valid in our case as it is derived from the needs of the algo
 \paragraph{Space complexity} is $O(n)$ since at worst case each timer is stored in its own bucket alongside a single entry in the timer hash. To compare, this spatial footprint is bound from above by that of the Hashed Hierarchical Time Wheel, as due to it's multi-level structure a single timer can be pointed at by a chain of hierarchical wheels, increasing its overall space requirement.
 
 \section{Comparison and Reflection}
+While general use systems, aggregating timers from several sources with, or applications with highly predictable needs may benefit from the relative stability of run-time provided by Timer Wheel (let alone the fact that it has been shown to be an optimal solution in terms of run-time complexity) Large scale machine serving systems would suffer from the overflow problem when faced with unpredictable scale of usage. This is handled in Lawn by a "slow and steady" approach, optimizing for specific use cases.
 
 Designed for large scale, high throughput systems, Lawn has displayed beyond state of the art performance for systems complying with its core assumptions of multi worker, hi-frequency, hi-timer-count with low TTL variance applications.
 
+
+\begin{table}[h!]
+	\begin{center}
+		\begin{tabular}{l|c|c}
+			%& \multicolumn{2}{c}{\textbf{Case}} \\
+			\textbf{Operation} & \textbf{Timer Wheel} & \textbf{Lawn} \\
+			\hline
+			\textit{StartTimer} & $O(1)$ & $O(1)$ \\
+			\textit{PerTick} & $O(1)$ & \boldmath{$O(t\sim1)$} \\
+			\textit{DeleteTimer} & $O(1)$ & $O(1)$ \\
+			\textit{TimerExpired} & $O(1)$ & $O(1)$ \\
+			\textit{overflow} & \boldmath{$O(n)$} & $O(1)$ \\
+			\textit{space} & $O(n)$ & $O(n)$ \\
+		\end{tabular}
+		\caption{Mean Runtime Complexity comparison}
+		\label{tab:table1}
+	\end{center}
+\end{table}
 
 \subsubsection{An Algorithmic View of Multiprocessing}
 Unlike the state-of-the-art Timer Wheel algorithm, Lawn enables the simultaneous timer handling and bookkeeping by splitting the buckets between several worker processes/threads, adding or removing workers as needed. This method enables the usage of the Lawn algorithm in highly parallel applications and does not requires a use of semaphores than other synchronization mechanisms within the bucket level.
 
 
-\section{Conclusion}
-XXXXXXX
-
 \subsubsection{Known implementations of Lawn in the wild}
 \begin{enumerate}
 	\item Redis Internals \cite{Redis} - a high performance in memory key value store - uses Lawn implementation for streams and other internal timers.
-	\item Mellanox RDMA timers for the Infiniband switching system\cite{MLNX}.
+	\item Mellanox RDMA timers for an undisclosed Infiniband subsystem.
 	\item User specific rate limiting timers for client device power consumption optimization\cite{VUSR}.
+	\item $clib$ Timer management utility lib.
 \end{enumerate}
+
+
+
+\section{Conclusion}
+Lawn is a simplified overflow-free algorithm that displays near-optimal results for use cases involving many (millions) concurrent timers from large scale (tens of thousands) of independent machine systems. 
+The algorithm is currently deployed and in use by several organizations under real-world load, all reporting satisfactory results.
+
 
 \bibliographystyle{acm}
 \bibliography{lawn}
 
 \end{document}
-
-
-c
