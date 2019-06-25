@@ -66,16 +66,17 @@
 \maketitle
 
 \begin{abstract}
-\textbf{\noindent As demand for Real-Time applications rise among the general public, the importance of enabling large-scale, unbound algorithms to solve conventional problems with low to no latency is critical for product viability\cite{WHT}. Timer algorithms are prevalent in the core mechanisms behind of operating systems\cite{BSD}, network protocol implementation, stream processing, and several database capabilities. This paper presents a field tested algorithm for a low latency, unbound range timer structure, based upon the well excepted Timing Wheel algorithm. Using a set of queues hashed by TTL, the algorithm allows for a simpler implementation, minimal overhead no overflow and no performance degradation in comparison to the current state of the algorithms under typical use cases.}
+\textbf{\noindent As demand for Real-Time applications rises among the general public, the importance of enabling large-scale, unbound algorithms to solve conventional problems with low to no latency is critical for product viability\cite{WHT}. Timer algorithms are prevalent in the core mechanisms behind  operating systems\cite{BSD}, network protocol implementation, stream processing, and several database capabilities. This paper presents a field-tested algorithm for low latency, unbound range timer structure, based upon the well excepted Timing Wheel algorithm. Using a set of queues hashed by TTL, the algorithm allows for a simpler implementation, minimal overhead no overflow and no performance degradation in comparison to the current state of the algorithms under typical use cases.}
 \linebreak \linebreak
-\textbf{\textit{Index Terms -} Stream Processing, Timing Wheel, Dehydrator, Callout facilities, protocol implementations, Timers, Timer Facilities.}
+\textbf{\textit{Index Terms -} Stream Processing, Timing Wheel, Dehydrator, Callout facilities, protocol implementations, Timers, Timer Facilities, Lawn.}
 \end{abstract}
 
 
 \section{Introduction}
+This paper presents a theoretical analysis of a timer data-structure designed for use with hi-throughput computer systems called Lawn. In this paper, it will be shown that although the current state of the art algorithm is theoretically optimal, under some use cases (namely where max TTL is unpredictable, or the needed Tick resolution may change) it is under-performing due to the overflow problem, which the algorithm presented here addresses. Utilizing Lawn may assist in improving overall performance and flexibility in TTL and Tick resolution with no need for any prior knowledge of the using system apart from it not utilizing non-discrete stochastic values for timer TTLs.
+\subsection{Model}
+In a similar manner to previous work\cite{TW}\cite{CQ}\cite{EMP}, the model discussed in this paper shall consist of the following components, each corresponding with a different stage in the life cycle of a timer in the data store:
 
-\section{Model}
-In similar manner to previous work\cite{TW}\cite{CQ}\cite{EMP}, the model discussed in this paper shall consist of the following components, each corresponding with a different stage in the life cycle of a timer in the data store:
 \begin{center}
 	$
 	StartTimer \linebreak 
@@ -86,9 +87,10 @@ In similar manner to previous work\cite{TW}\cite{CQ}\cite{EMP}, the model discus
 	$
 	\vspace{3pt}
 \end{center}
+
 \paragraph{StartTimer(TTL,timerId\{,Payload\}):} This routine is called by the client to start a timer that will expire in after the TTL has passed. The client is also expected to supply a \textit{timer ID} in order to distinguish it from other timers in the data store. Some implementations also allow the client to provide a \textit{Payload}, usually some form of a callback action to be performed or data to be returned on timer expiration.
 
-\paragraph{PerTickBookkeeping():} This routine encompasses all the actions, operation and callbacks to be performed as part of timer management and  expiration check every interval as determined by the data store granularity. Upon discovery of an outstanding timer to expire \textit{TimerExpired} will be initiated by this routine.
+\paragraph{PerTickBookkeeping():} This routine encompasses all the actions, operation and callbacks to be performed as part of timer management and expiration check every interval as determined by the data store granularity. Upon discovery of an outstanding timer to expire \textit{TimerExpired} will be initiated by this routine.
 
 \paragraph{DeleteTimer(timerId):} The client may call this utility routine in order to remove from the data store an outstanding timer (corresponding with a given \textit{timer ID}), this is done by calling \textit{TimerExpired} for the requested timer before \textit{PerTickBookkeeping} had marked it to be expired.
 
@@ -96,7 +98,7 @@ In similar manner to previous work\cite{TW}\cite{CQ}\cite{EMP}, the model discus
 
 \vspace{5mm}
 
-Since payload and callback behavior varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks can be done in a discrete, highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
+Since payload and callback behaviour varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks can be done in a discrete, highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
 
 
 \section{Current Solutions}
@@ -124,7 +126,7 @@ Being included as an integral part of almost any modern programming language, th
 
 
 \subsection{Hashed Timing Wheel}
-The Hashed Timing Wheel was designed to be an all purpose timer storage solution for a unified system of known size and resolution\cite{TW87}\cite{TW}\cite{TWI}. While previous work have shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the solution is commonly to over estimate the needed resolution and/or TTL so to abstain from rebuilding for as long as possible. 
+The Hashed Timing Wheel was designed to be an all-purpose timer storage solution for a unified system of known size and resolution\cite{TW87}\cite{TW}\cite{TWI}. While previous work has shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the simplest and mose effective solution is to overestimate the needed resolution and/or TTL so to abstain from rebuilding for as long as possible. 
 
 \advcomplexity{n}{1}{n}{1}{1}{1}{1}{1}{the Hashed Timing Wheel}
 
@@ -133,20 +135,27 @@ The Hashed Timing Wheel was designed to be an all purpose timer storage solution
  
 \subsection{Intended Use Cases}
 
-This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product using a FastData\cite{GP} model. The data structure was to receive inputs from one or more systems that make use of a very limited range of TTLs in proportion to the number of concurrent timers they use. 
+This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product\cite{VUSR} using a FastData\cite{GP} model. The data structure was to receive inputs from one or more systems that make use of a very limited range of TTLs in proportion to the number of concurrent timers they use. 
 
 \paragraph{Assumptions and Constraints :}
-As this algorithm was designed to operate as the core of a dehydration utility for a single FastData application, where TTLs are usually discrete and variance is low it is intended for use under the assumptions that: 
+As this algorithm was originally designed to operate as the core of a dehydration utility for a single FastData application, where TTLs are usually discrete and variance is low it is intended for use under the assumptions that: 
 \begin{center}
 	$ Unique\ TTL\ Count \ll Concurrent\ Timer\ Count $
 \end{center}
 Assuming that most timers will have a TTL from within a small set of options will enable the application of the core concept behind the algorithm - TTL bucketing. 
 
 \subsubsection{The Data Structure}
-Lawn is, in it's core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set the timers are naturally sorted by time  of arrival - effectively using the set as a queue. Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there should be expired before the current one, since it is already in the queue and have the same TTL.
+Lawn is, at its core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set, the timers are naturally sorted by time of arrival - effectively using the set as a queue  (as can be seen in fig. \ref{fig:Lawn1}). Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there should be expired before the current one, since it is already in the queue and have the same TTL.
 
-The data structure is analogous to blades of grass (hence the name) - each blade grows from the roots up, and periodically (in our case every $Tick$) the overgrown tops of the grass blades (the expired timers) are maintained by mewing the lawn to a desired level (current time).       
- 
+The data structure is analogous to blades of grass (hence the name) - each blade grows from the roots up, and periodically (in our case every $Tick$) the overgrown tops of the grass blades (the expired timers) are maintained by mowing the lawn to the desired level (current time).       
+
+\begin{figure}
+	\includegraphics[width=\linewidth]{lawn.png}
+	\caption{A schematic view of the data structure components.}
+	\label{fig:Lawn1}
+\end{figure}
+
+
 \subsection{Algorithm}
 \begin{algorithm}
 	\caption{The Lawn Data Store \label{alg:lawn}}
@@ -212,7 +221,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 
 \subsubsection{Correctness \& Completeness}
 %Given Timer $T$ with TTL $TTL$ that is started (using the \textit{StartTimer} operation) at time $t$,  
-To prove correctness of the algorithm,  it should be demonstrated that for each Timer, it is expired (by the calling the \textit{TimerExpired} operation or it) within \textit{Tick} of it's intended TTL. As the algorithm pivots around the TTL bucketing concept, where in each timer is stored exactly once in it's corresponding bucket, and these buckets are independent of each other, it is sufficient to demonstrating correctness for all timers of a bucket, That is:
+To prove the algorithm's correctness, it should be demonstrated that for each Timer $t$ with TTL $ttl$,  \textit{TimerExpired} operation is called on $t$ within \textit{Tick} of $ttl$. Since the algorithm pivots around the TTL bucketing concept, wherein each timer is stored exactly once in its corresponding bucket, and these buckets are independent of each other, it is sufficient to demonstrating correctness for all timers of a bucket, That is:
 \begin{center}
 	$\forall \quad T^{start}, T^{ttl} \in \mathbb{N} \quad \exists \quad T^{stop} \in \mathbb{N} : T^{stop}-T^{start} \approx T^{ttl}$
 \end{center}
@@ -238,7 +247,7 @@ The Lawn data structure is dense by design, as every timer is stored exactly onc
 
 Since the \textit{PerTickBookkeeping} routine of Lawn iterates over the top item of all known TTL buckets on every expiration cycle (where at least one timer is expected to expire), it's mean case runtime is linear to $t$ (the number of different TTLs) and seems to be lacking even in comparison to more primitive implementations of timer storage. That said, with an added assumption that the TTL set size is roughly constant over time, or at worst asymptotically smaller then the number of timers, we can regard this operation as constant time.
 
-This assumption is valid in our case as it is derived from the needs of the algorithm users, these being other computer systems, which often have either a single TTL used repeatedly, their TTLs chosen from a list of hard coded values or derived from a simple mathematical operation (sliding windows are a good example of this method, using fixed increments or powers of 2 to determine TTLs etc.). Computer systems which are using highly variable TTL values are suitable for usage with this timer algorithm only under specific circumstances (such as multi-worker expiration system as described below).
+This assumption is valid in our case as it is derived from the needs of the algorithm users, these being other computer systems, which often have either a single TTL used repeatedly, their TTLs are chosen from a list of hard-coded values or derived from a simple mathematical operation (sliding windows are a good example of this method, using fixed increments or powers of 2 to determine TTLs etc.). Computer systems which are using highly variable TTL values are suitable for usage with this timer algorithm only under specific circumstances (such as multi-worker expiration system as described below).
 
 
 \paragraph{Space complexity} is $O(n)$ since at worst case each timer is stored in its own bucket alongside a single entry in the timer hash. To compare, this spatial footprint is bound from above by that of the Hashed Hierarchical Time Wheel, as due to it's multi-level structure a single timer can be pointed at by a chain of hierarchical wheels, increasing its overall space requirement.
@@ -246,7 +255,7 @@ This assumption is valid in our case as it is derived from the needs of the algo
 \section{Comparison and Reflection}
 While general use systems, aggregating timers from several sources with, or applications with highly predictable needs may benefit from the relative stability of run-time provided by Timer Wheel (let alone the fact that it has been shown to be an optimal solution in terms of run-time complexity) Large scale machine serving systems would suffer from the overflow problem when faced with unpredictable scale of usage. This is handled in Lawn by a "slow and steady" approach, optimizing for specific use cases.
 
-Designed for large scale, high throughput systems, Lawn has displayed beyond state of the art performance for systems complying with its core assumptions of multi worker, hi-frequency, hi-timer-count with low TTL variance applications.
+Designed for large scale, high throughput systems, Lawn has displayed beyond state of the art performance for systems complying with its core assumptions of a multi-worker, hi-frequency, hi-timer-count with low TTL variance applications.
 
 
 \begin{table}[h!]
@@ -267,15 +276,17 @@ Designed for large scale, high throughput systems, Lawn has displayed beyond sta
 	\end{center}
 \end{table}
 
-\subsubsection{An Algorithmic View of Multiprocessing}
-Unlike the state-of-the-art Timer Wheel algorithm, Lawn enables the simultaneous timer handling and bookkeeping by splitting the buckets between several worker processes/threads, adding or removing workers as needed. This method enables the usage of the Lawn algorithm in highly parallel applications and does not requires a use of semaphores than other synchronization mechanisms within the bucket level.
+\subsubsection{A View of Multiprocessing}
+Unlike the state-of-the-art Timer Wheel algorithm, Lawn enables the simultaneous timer handling and bookkeeping by splitting the buckets between several worker processes/threads, adding or removing workers as needed. This method enables the usage of the Lawn algorithm in highly parallel applications and does not require the use of semaphores than other synchronization mechanisms within the bucket level.
 
 
-\subsubsection{Known implementations of Lawn in the wild}
+\subsubsection{Known implementations of Lawn}
+As mentioned in the body of this paper, the Lawn algorithm has already been tested and deployed in several programming languages by different organizations. Some of these implementations were developed by or in tandem with the author of this paper and some with his permission all with reported improvement in performance. The algorithm is free to use and the source code for many of these implementations has been published under an open source license.
 \begin{enumerate}
-	\item Redis Internals \cite{Redis} - a high performance in memory key value store - uses Lawn implementation for streams and other internal timers.
+	\item Redis Internals \cite{Redis} - a high performance in-memory key-value store - uses Lawn implementation for streams and other internal timers.
+	\item ReDe event dehydrator Redis module\cite{REDE}.
 	\item Mellanox RDMA timers for an undisclosed Infiniband subsystem.
-	\item User specific rate limiting timers for client device power consumption optimization\cite{VUSR}.
+	\item User specific rate limiting-timers for client device power consumption optimization\cite{VUSR}.
 	\item $clib$ Timer management utility lib.
 \end{enumerate}
 

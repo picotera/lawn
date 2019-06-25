@@ -1,0 +1,61 @@
+\begin{thebibliography}{10}
+
+\bibitem{BSD}
+{\sc Costello, A., Costello, A.~M., Varghese, G., and Varghese, G.}
+\newblock Redesigning the bsd callout and timer facilities.
+\newblock Tech. rep., 1995.
+
+\bibitem{EMP}
+{\sc Jones, D.~W.}
+\newblock An empirical comparison of priority-queue and event-set
+  implementations.
+\newblock {\em Commun. ACM 29}, 4 (Apr. 1986), 300--311.
+
+\bibitem{GP}
+{\sc Lev-Libfeld, A., and Margolin, A.}
+\newblock Fast data - moving beyond from big data’s map-reduce.
+\newblock {\em GeoPython 1\/} (June 2016), 3--6.
+
+\bibitem{CQ}
+{\sc Sleator, D., and Brown, R.}
+\newblock Calendar queues: A fast o(1) priority queue implementation for the
+  simulation event set problem.
+
+\bibitem{WHT}
+{\sc Vany, A.~D.}
+\newblock Uncertainty, waiting time, and capacity utilization: A stochastic
+  theory of product quality.
+\newblock {\em Journal of Political Economy 84}, 3 (1976), 523--541.
+
+\bibitem{TW}
+{\sc Varghese, G., and Lauck, A.}
+\newblock Hashed and hierarchical timing wheels: efficient data structures for
+  implementing a timer facility.
+\newblock {\em IEEE/ACM transactions on networking 5}, 6 (December 1997),
+  824--834.
+
+\bibitem{TW87}
+{\sc Varghese, G., and Lauck, T.}
+\newblock Hashed and hierarchical timing wheels: Data structures for the
+  efficient implementation of a timer facility.
+\newblock {\em SIGOPS Oper. Syst. Rev. 21}, 5 (Nov. 1987), 25--38.
+
+\bibitem{TWI}
+{\sc Welch, N.}
+\newblock timeout.c: Tickless hierarchical timing wheel implementation. Available at http://25thandclement.com/ william/projects/timeout.c.html
+
+
+\bibitem{VUSR}
+{\sc Adam~Matan, A. L.-L.}
+\newblock Vioozer geo-tagging system, 2017. More information at https://www.vioozer.com
+
+\bibitem{REDE}
+{\sc Lev-Libfeld A., et al.}
+\newblock Available at https://www.tamarlabs.com/ReDe/
+
+\bibitem{Redis}
+{\sc Iberra, S. et al.}
+\newblock Redis, 2009.  Available at https://redis.io/
+
+
+\end{thebibliography}
