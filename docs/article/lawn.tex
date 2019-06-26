@@ -1,4 +1,4 @@
-\documentclass[acmsmall,a4paper]{acmart} % to add: twocolumn
+\documentclass[acmsmall]{acmart} % \documentclass[twocolumn,a4paper]{article}
 
 \usepackage{
 	graphicx,
@@ -27,7 +27,6 @@
 			\textit{TimerExpired} & $O(#4)$ \\
 		\end{tabular}
 		\caption{Time Complexity for #5 scheme}
-%		\label{tab:table1}
 	\end{center}
 \end{table}
 }
@@ -45,7 +44,6 @@
 			\textit{TimerExpired} & $O(#7)$ & $O(#8)$ \\
 		\end{tabular}
 		\caption{Runtime Complexity for #9 scheme}
-		\label{tab:table1}
 	\end{center}
 \end{table}
 }
@@ -88,7 +86,6 @@ In a similar manner to previous work\cite{TW}\cite{CQ}\cite{EMP}, the model disc
 	\swarrow  \hspace{15pt}  \searrow \linebreak 
 	DeleteTimer \hspace{15pt} TimerExpired
 	$
-	\vspace{3pt}
 \end{center}
 
 
@@ -100,40 +97,36 @@ In a similar manner to previous work\cite{TW}\cite{CQ}\cite{EMP}, the model disc
 
 \paragraph{TimerExpired(timerId):} Internally invoked by either \textit{PerTickBookkeeping} or \textit{DeleteTimer} this routine entails all actions and operations needed in order to remove all traces of the timer corresponding with a given \textit{timer ID} from the data store and invoking the any callbacks that were provided as \textit{Payload} during the \textit{StartTimer} routine.
 
-\vspace{5mm}
+\subsection{callback run-time complexity}
 
-Since payload and callback behaviour varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks can be done in a discrete, highly (or even embarrassingly) parallel this paper will disregard this aspect of timer stores.
+Since payload and callback run-time complexity varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks can be done in a discrete, highly (or even embarrassingly) parallel, this paper will disregard this aspect of timer stores.
 
 
 \section{Current Solutions}
 
 \subsection{Lists, Queues \& Hash Maps}
-Being included as an integral part of almost any modern programming language, these basic data structures enable convenient and simple addition of timer management to any software. That said, such simple structures suffer from oversimplification and are appropriate for very unique use cases - where the number of timers it fairly small or the ticks are far enough from one another. Using such implementations for large scale applications will require the grouping of timer producers and consumers into groups small 
-
-
 
 \begin{table}[h!]
 	\begin{center}
 		\begin{tabular}{l|c|c}
-			%& \multicolumn{2}{c}{\textbf{Case}} \\
 			\textbf{Operation} & \textbf{List/Queue} & \textbf{Hash Map} \\
 			\hline
 			\textit{StartTimer} & $O(log(n))$ & $O(1)$ \\
 			\textit{PerTick} & $O(1)$ & $O(n)$ \\
 			\textit{DeleteTimer} & $O(n)$ & $O(1)$ \\
-			\textit{TimerExpired} & $O(1)$ & $O(1)$ \\
+			\textit{TimerExpired} & $O(n)$ & $O(1)$ \\
 		\end{tabular}
 		\caption{Mean Runtime Complexity for timing schemes based on common data structures}
-		\label{tab:table1}
 	\end{center}
 \end{table}
 
+Being included as an integral part of almost any modern programming language, these basic data structures enable convenient and simple addition of timer management to any software. That said, such simple structures suffer from oversimplification and are appropriate for very unique use cases - where the number of timers it fairly small or the ticks are far enough from one another. Using such implementations for large scale applications will require the grouping of timer producers and consumers into groups small 
+
+
 
 \subsection{Hashed Timing Wheel}
-The Hashed Timing Wheel was designed to be an all-purpose timer storage solution for a unified system of known size and resolution\cite{TW87}\cite{TW}\cite{TWI}. While previous work has shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the simplest and mose effective solution is to overestimate the needed resolution and/or TTL so to abstain from rebuilding for as long as possible. 
-
 \advcomplexity{n}{1}{n}{1}{1}{1}{1}{1}{the Hashed Timing Wheel}
-
+The Hashed Timing Wheel was designed to be an all-purpose timer storage solution for a unified system of known size and resolution\cite{TW87}\cite{TW}\cite{TWI}. While previous work has shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the simplest and mose effective solution is to overestimate the needed resolution and/or TTL so to abstain from rebuilding for as long as possible. 
 
 \section{The Lawn Data Structure}
  
@@ -151,15 +144,15 @@ Assuming that most timers will have a TTL from within a small set of options wil
 \subsubsection{The Data Structure}
 Lawn is, at its core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set, the timers are naturally sorted by time of arrival - effectively using the set as a queue  (as can be seen in fig. \ref{fig:Lawn1}). Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there would be expired before the current one, since it is already in the queue and have the same TTL.
 
-\begin{figure}
-	\includegraphics[width=\linewidth]{lawn.png}
-	\caption{A schematic view of the data structure components.}
-	\label{fig:Lawn1}
-\end{figure}
-
-
 The data structure is analogous to blades of grass (hence the name) - each blade grows from the roots up, and periodically (in our case every $Tick$) the overgrown tops of the grass blades (the expired timers) are maintained by mowing the lawn to the desired level (current time).
 
+\begin{figure}
+	\centering
+	\includegraphics[width=0.7\linewidth]{lawn.png}
+	\caption[Lawn schematic diagram]{A schematic view of the data structure components.}
+	\Description[Lawn schematic diagram]{A schematic view of the data structure components.}
+	\label{fig:Lawn1}
+\end{figure}
 
 \subsection{Algorithm}
 \begin{algorithm}
@@ -306,4 +299,3 @@ The algorithm is currently deployed and in use by several organizations under re
 \bibliography{lawn}
 
 \end{document}
-\endinput
