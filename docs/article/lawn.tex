@@ -1,4 +1,4 @@
-\documentclass[twocolumn,a4paper]{article}
+\documentclass[acmsmall,a4paper]{acmart} % to add: twocolumn
 
 \usepackage{
 	graphicx,
@@ -52,14 +52,17 @@
 
 \title{Lawn: an Unbound Low Latency Timer Data Structure for Large Scale, High Throughput Systems} 
 
-\author{
-	\textsc{Adam Lev-Libfeld} \\[1ex]
-	\normalsize Tamar Labs \\
-	\normalsize Tel-Aviv, Israel \\
-	\normalsize{adam@tamarlabs.com}
+\author{Adam Lev-Libfeld}
+\email{adamlev@cs.huji.ac.il}
+\orcid{000-0002-3268-0851}
+\authornotemark[1]
+\affiliation{
+	\institution{Tamar Labs}
+	\city{Tel-Aviv}
+	\state{Israel}
 }
-\date{\today}
 
+\renewcommand{\shortauthors}{Lev-Libfeld A.}
 
 \begin{document}
 
@@ -87,6 +90,7 @@ In a similar manner to previous work\cite{TW}\cite{CQ}\cite{EMP}, the model disc
 	$
 	\vspace{3pt}
 \end{center}
+
 
 \paragraph{StartTimer(TTL,timerId\{,Payload\}):} This routine is called by the client to start a timer that will expire in after the TTL has passed. The client is also expected to supply a \textit{timer ID} in order to distinguish it from other timers in the data store. Some implementations also allow the client to provide a \textit{Payload}, usually some form of a callback action to be performed or data to be returned on timer expiration.
 
@@ -145,15 +149,16 @@ As this algorithm was originally designed to operate as the core of a dehydratio
 Assuming that most timers will have a TTL from within a small set of options will enable the application of the core concept behind the algorithm - TTL bucketing. 
 
 \subsubsection{The Data Structure}
-Lawn is, at its core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set, the timers are naturally sorted by time of arrival - effectively using the set as a queue  (as can be seen in fig. \ref{fig:Lawn1}). Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there should be expired before the current one, since it is already in the queue and have the same TTL.
-
-The data structure is analogous to blades of grass (hence the name) - each blade grows from the roots up, and periodically (in our case every $Tick$) the overgrown tops of the grass blades (the expired timers) are maintained by mowing the lawn to the desired level (current time).       
+Lawn is, at its core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set, the timers are naturally sorted by time of arrival - effectively using the set as a queue  (as can be seen in fig. \ref{fig:Lawn1}). Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there would be expired before the current one, since it is already in the queue and have the same TTL.
 
 \begin{figure}
 	\includegraphics[width=\linewidth]{lawn.png}
 	\caption{A schematic view of the data structure components.}
 	\label{fig:Lawn1}
 \end{figure}
+
+
+The data structure is analogous to blades of grass (hence the name) - each blade grows from the roots up, and periodically (in our case every $Tick$) the overgrown tops of the grass blades (the expired timers) are maintained by mowing the lawn to the desired level (current time).
 
 
 \subsection{Algorithm}
@@ -297,7 +302,8 @@ Lawn is a simplified overflow-free algorithm that displays near-optimal results 
 The algorithm is currently deployed and in use by several organizations under real-world load, all reporting satisfactory results.
 
 
-\bibliographystyle{acm}
+\bibliographystyle{ACM-Reference-Format}
 \bibliography{lawn}
 
 \end{document}
+\endinput
