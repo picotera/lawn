@@ -58,4 +58,14 @@
 \newblock Redis, 2009.  Available at https://redis.io/
 
 
+\bibitem{autoscale}
+{\sc Ziyan ZhouIvan D. PashovJonathan A. SilveraMatthew R. Cox,}
+\newblock US patent US20140298073A1
+
+\bibitem{largescale}
+{\sc Hanzhong Hu,}
+\newblock US patent US8307030B1
+
+
+
 \end{thebibliography}
