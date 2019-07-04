@@ -1,0 +1,14 @@
+Dear editor/reviewer,
+
+My name is Adam Lev-Libfeld an I have been working in the field of High-Performance Computing for the last decade. I started as a research assistant than an associate researcher in the MOSIX preemptive process migration lab at HUJI, then as a major government-operated research centre, and then as a private consultant with Tamar Labs, Redis Labs, and several companies here in Israel. 
+
+This is cover letter for the submitted paper presenting a new timer data structure named "Timer Lawn", that is the fruit of working with internet scale companies over the last few years. This data structure, although suboptimal theoretically, provides better performance in real life scenarios when compared to the current state of the art Timer Wheel by examining real-life use cases and avoiding the rebuilding problem altogether. The Lawn data structure is unbound, self-scaling, highly parallel and simpler to implement with the only limit being having the Timer TTL be discrete.
+
+The Lawn data structure has already been deployed to several applications (as listed in the paper) with reportedly highly positive effects. With major algorithmic advancements in the field dating back to the late 90s (specifically published by TNET), this new data structure is tailored to the needs of modern computer-to-computer and networking systems, streamlining the efficient coding and use of large numbers of timers in real life applications.
+
+Thank you for taking the time to review this paper, please feel free to contact me with any questions you may have.
+
+Sincerely,
+Adam Lev-Libfeld
+
+adamlev@cs.huji.ac.il
