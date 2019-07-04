@@ -40,28 +40,32 @@
 @TECHREPORT{BSD,
 	author = {Adam Costello and Adam M. Costello and George Varghese and George Varghese},
 	title = {Redesigning the BSD Callout and Timer Facilities},
-	institution = {},
+	institution = {Washington University in St Louis},
 	year = {1995}
 }
+
 @misc{GH,
 	ALTauthor = {Adam Lev-Libfeld},
 	title = {Lawn GitHub repository},
 	url = {https://githubom/picotera/lawn},
+	howpublished = {\url{https://githubom/picotera/lawn}},
 	OPTlanguage = {C},
 	OPTversion = {0.0.1},
 	OPTorganization = {Tamar Labs inc.},
 }
 
-@online{TWI,
+@misc{TWI,
 	author = {Nick Welch},
 	title = {timeout.c: Tickless Hierarchical Timing Wheel Implementation},
 	url = {http://25thandclement.com/~william/projects/timeout.c.html},
+	howpublished = {\url{http://25thandclement.com/~william/projects/timeout.c.html}},
 	language = {C},
 }
 @online{HTS,
 	ALTauthor = {William Ahern},
 	title = {hash-table-shootout : A benchmark of some prominent C/C++ hash table implementations},
 	url = {https://github.com/mackstann/hash-table-shootout},
+	howpublished = {\url{https://github.com/mackstann/hash-table-shootout}},
 	OPTlanguage = {Python, C/C++},
 	year={2010},
 	OPTorganization = {TreeTop Commons},
@@ -72,22 +76,58 @@
 	url = {https://redis.io/},
 	language = {C/C++},
 	year={2009},
+	howpublished = {\url{https://redis.io/}},
 	organization = {Redis Labs},
 }
-@online{MLNX,
+@misc{MLNX,
 	title = {Mellanox Infiniband Switching Systems},
 	url = {http://www.mellanox.com/page/switch_systems_overview},
+	howpublished = {\url{http://www.mellanox.com/page/switch_systems_overview}},
 	year={2018},
 	organization = {Mellanox},
 }
-@online{VUSR,
-	author = {Adam Matan, Adam Lev-Libfeld},
+@misc{VUSR,
+	author = {Adam Matan, Adam Lev-Libfeld, Alexander Margolin},
 	title = {Vioozer geo-tagging system},
 	url = {http://www.vioozer.com/},
+	howpublished = {\url{http://www.vioozer.com/}},
 	language = {Python},
 	year={2017},
 	organization = {Vioozer Inc.},
 }
+@misc{REDE,
+	author = {Adam Lev-Libfeld},
+	title = {A Redis Element Dehydration Module},
+	url = {www.tamarlabs.com/ReDe/},
+	howpublished = {\url{www.tamarlabs.com/ReDe/}},
+	language = {C},
+	year={2017},
+	organization = {Tamar Labs},
+}
+
+@misc{largescale,
+	author = {Hanzhong Hu},
+	title = {Large-scale timer management},
+	number = {US8307030B1},
+	howpublished = {US Patent no. US8307030B1},
+	date = {April 20, 2010},
+	OPTholder = {Juniper Networks Inc},
+	OPTyear = {2010},
+	OPTurl = {\url{https://patents.google.com/patent/US8307030B1/en}},
+}
+
+@misc{autoscale,
+	author = {Ziyan ZhouIvan},
+	title = {On-Demand Scalable Timer Wheel},
+	number = {US20140298073A1},
+	howpublished = {US Patent no. US20140298073A1},
+	date = {March 28, 2013},
+	OPTholder = {Microsoft Technology Licensing LLC},
+	OPTyear = {2013},
+	OPTurl = {\url{https://patents.google.com/patent/US20140298073A1/en}},
+}
+
+
 @article{WHT,
 	ISSN = {00223808, 1537534X},
 	URL = {http://www.jstor.org/stable/1829867},
@@ -107,7 +147,7 @@
 	volume = {31},
 	number= {10},
 	month=Oct,
-	jurnal={Comunications of the ACM},
+	journal={Comunications of the ACM},
 	year = {1988}
 }
 
@@ -128,4 +168,20 @@
 	acmid = {5686},
 	publisher = {ACM},
 	address = {New York, NY, USA},
+}
+
+
+@book{REND,
+	author = {Bruce Powel Douglass},
+	title = {Real-Time Design Patterns},
+	note = {chapter 5: Concurrency Patterns (Rendezvous)},
+	year = {2003},
+	chapter = {5},
+	pages = {203--258},
+	OPTbookauthor = {Bruce Powel Douglass},
+	OPTforeword = {E. Douglas Jensen},
+	OPTsubtitle = {Robust Scalable Architecture for Real-Time Systems},
+	OPTlanguage = {English},
+	publisher = {Addison-Wesley},
+	OPTisbn = {0201699567},
 }
