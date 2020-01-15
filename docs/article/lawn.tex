@@ -37,7 +37,7 @@
 \makesavenoteenv{tabular}
 \makesavenoteenv{table}
 
-\title{Timer Lawn: Solving the Timer Wheel Overflow Problem Using Unbound Low Latency Timer Data Structure for Large Scale and High Throughput Systems} 
+\title{Timer Lawn: Solving the Timer Wheel Overflow Problem for Large Scale and High Throughput Systems} 
 
 
 \author{
@@ -102,26 +102,24 @@ Being included as an integral part of almost any modern programming language, th
 
 \subsection{Hashed Timing Wheel}
 \complexity{Worst}{Mean}{n}{1}{n}{1}{1}{1}{the Hashed Timing Wheel scheme}
-The Hashed Timing Wheel was designed to be an all-purpose timer storage solution for a unified system of known size and resolution\cite{TW87, TW, TWI, largescale, autoscale}. While previous work has shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the simplest and mose effective solution is to overestimate the needed resolution and/or TTL so to abstain from rebuilding for as long as possible.
+The Hashed Timing Wheel was designed to be an all-purpose timer storage solution for a unified system of known size and resolution\cite{TW87, TW, TWI, largescale, autoscale}. While previous work has shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the simplest and mose effective solution is to overestimate the needed resolution and/or TTL so to abstain from rebuilding (resizing) for as long as possible.
 
 \subsection{Overflow Algorithms}
 in order to handle overflows correctly there are two valid options:
-\subsubsection{increase current wheel slots (Alg. \ref{alg:overflow_rebuild})} Rebuild the overflowing wheel so it would include a larger number of slots into the future. This change entails a worst case cost of $O(n)$ upon any addition of an overflowing timer.
-\subsubsection{in place addition of cycle count for each item (Alg. \ref{alg:overflow_inplace})} Each element in a slot is also stored with the number of wheel cycles needed before element expiration. This change entails a worst case cost of $O(n)$ for all \textit{PerTickBookkeeping} operation.
-
+\subsubsection{increase current wheel slots (Alg. \ref{alg:overflow_resize})} Resize the overflowing wheel so it would include a larger number of slots into the future. This change entails a worst case cost of $O(n)$ upon any addition of an overflowing timer.
 
 \begin{algorithm}
-	\caption{Timer Wheel Data Store Rebuild algorithm\label{alg:overflow_rebuild}}
+	\caption{Timer Wheel Resize\label{alg:overflow_resize}}
 	\begin{algorithmic}[1]
 		\Function{StartTimer}{$id$, $ttl$, $payload$}
 		\If{$ttl > len(Wheel)$}
-			\Let{MissingSlots}{$ttl-len(Wheel)$}
-			\Let{ExtWheel}{array of length $len(Wheel) + MissingSlots$}
-			\For{Slot,SlotIndex \textbf{in} Wheel}
-				\Let{NewSlotIndex}{(len(Wheel)+SlotIndex) $\textit{\textbf{mod}}$ len(ExtWheel) }
-				\Let{ExtWheel[NewSlotIndex]}{Slot}
-			\EndFor
-			\Let{Wheel}{ExtWheel}
+		\Let{MissingSlots}{$ttl-len(Wheel)$}
+		\Let{ExtWheel}{array of length $len(Wheel) + MissingSlots$}
+		\For{Slot,SlotIndex \textbf{in} Wheel}
+		\Let{NewSlotIndex}{(len(Wheel)+SlotIndex) $\textit{\textbf{mod}}$ len(ExtWheel) }
+		\Let{ExtWheel[NewSlotIndex]}{Slot}
+		\EndFor
+		\Let{Wheel}{ExtWheel}
 		\EndIf
 		\Let{$slot$}{(current time+ttl) \textit{\textbf{mod}} $len(Wheel)$}
 		\State{append $payload$ to Wheel[$slot$]}
@@ -131,8 +129,10 @@ in order to handle overflows correctly there are two valid options:
 \end{algorithm}
 
 
+\subsubsection{in place addition of cycle count for each item (Alg. \ref{alg:overflow_inplace})} Each element in a slot is also stored with the number of wheel cycles needed before element expiration. This change entails a worst case cost of $O(n)$ for all \textit{PerTickBookkeeping} operation.
+
 \begin{algorithm}
-	\caption{Timer Wheel Data Store Multipass (in-place) algorithm\label{alg:overflow_inplace}}
+	\caption{Timer Wheel Multi-Pass (in-place)\label{alg:overflow_inplace}}
 	\begin{algorithmic}[1]
 		\Statex
 		\Function{StartTimer}{$id$, $ttl$, $payload$}
@@ -153,8 +153,6 @@ in order to handle overflows correctly there are two valid options:
 		\EndFunction
 	\end{algorithmic}
 \end{algorithm}
-
-
 
 \section{The Lawn Data Structure}
  
@@ -285,24 +283,23 @@ Designed for large scale, high throughput systems, Lawn has displayed beyond sta
 
 \begin{table}[ht]
 	\begin{center}
-		\begin{tabular}{l|c|c}
+		\begin{tabular}{l|c|c|c}
 			%& \multicolumn{2}{c}{\textbf{Case}} \\
-			\textbf{Operation} & \textbf{Timing Wheel} & \textbf{Lawn} \\
+			\textbf{Operation} & \textbf{TW (Resize)} & \textbf{TW (Multi-Pass)} & \textbf{Lawn} \\
 			\hline
-			\textit{StartTimer} & $O(1)$ & $O(1)$ \\
-			\textit{StartTimer} & \boldmath{$O(n)$}\footnote{only if \textit{Rebuild} overflow handling algorithm is used, else O(1)} & $O(1)$ \\
-			\textit{PerTick} & $O(1)$ & \boldmath{$O(t\sim1)$} \\
-			\textit{DeleteTimer} & $O(1)$ & $O(1)$ \\
-			\textit{TimerExpired} & \boldmath{$O(n)$}\footnote{only if \textit{Multipass} overflow handling algorithm is used, else O(1)} & $O(1)$ \\
-			\textit{space} & $O(n)$ & $O(n)$ \\
+			\textit{StartTimer} & \boldmath{$O(n)$}\footnote{\label{overflowfn}on overflow, else O(1)} & $O(1)$ & $O(1)$ \\
+			\textit{PerTick} & $O(1)$ & $O(1)$ & \boldmath{$O(t\sim1)$} \\
+			\textit{DeleteTimer} & $O(1)$ & $O(1)$ & $O(1)$ \\
+			\textit{TimerExpired} & $O(1)$ & \boldmath{$O(n)$}\footnote{see footnote \ref{overflowfn}} & $O(1)$ \\
+			\textit{space} & $O(n)$ & $O(n)$ & $O(n)$ \\
 		\end{tabular}
 		\linebreak
-		\caption{Mean Runtime Complexity comparison}
+		\caption{Runtime Complexity comparison}
 	\end{center}
 \end{table}
 
 \subsection{A View of Multiprocessing}
-Unlike the state-of-the-art Timer Wheel algorithm, Lawn enables the simultaneous timer handling and bookkeeping by splitting the buckets between several worker processes or threads, adding or removing workers as needed. This method enables usage of the Lawn algorithm in highly parallel applications and does not require the use of semaphores than other synchronization mechanisms within the bucket level.
+Unlike the state-of-the-art Timer Wheel algorithm, Lawn enables the simultaneous timer handling and bookkeeping by splitting the buckets between several worker processes, threads or even different machines altogether, adding or removing workers as needed. This method enables usage of the Lawn algorithm in large scale or highly parallel applications and does not require the use of semaphores than other synchronization mechanisms within a single bucket.
 
 
 \subsection{Known implementations of Lawn}
@@ -316,8 +313,8 @@ As mentioned in the body of this paper, the Lawn algorithm has already been test
 \end{enumerate}
 
 \section{Conclusion}
-Lawn is a simplified overflow-free algorithm that displays near-optimal results for use cases involving many (millions) concurrent timers from large scale (tens of thousands) of independent machine systems. 
-Using Lawn is an elegant solution to the overflow problem in Timer Wheel and other current algorithms, requiring less knowledge about the usage pattern with the only requirement is for the TTLs being discrete and bound, but not what the bounds are.
+Lawn is a simplified overflow-free algorithm that displays near-optimal results for use cases involving many (tens of millions) concurrent timers from large scale (tens of thousands) independent machine systems.
+Using Lawn is an elegant solution to the overflow problem in Timer Wheel and other current algorithms, enabling simpler use of available cores and requiring less knowledge about the usage pattern with the only requirement is for the TTLs being discrete and their number being bound, but not knowing what the bound on max TTL is.
 The algorithm is currently deployed and in use by several organizations under real-world load, all reporting satisfactory results.
 
 
