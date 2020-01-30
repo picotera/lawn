@@ -125,7 +125,7 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
         queue->tail = NULL;
         if (lawn != NULL) {
             char ttl_str[256];
-            sprintf(ttl_str, "%llu", node->ttl_queue);
+            sprintf(ttl_str, "%lu", node->ttl_queue);
             TrieMap_Delete(lawn->timeout_queues, ttl_str, strlen(ttl_str), freeQueueCB);
         }
         return;
@@ -167,7 +167,7 @@ ElementQueueNode* _queuePop(Lawn* lawn, ElementQueue* queue) {
        queue->head = NULL;
        if (lawn != NULL) {
             char ttl_str[256];
-            sprintf(ttl_str, "%llu", node->ttl_queue);
+            sprintf(ttl_str, "%lu", node->ttl_queue);
             // TrieMap_Delete(lawn->timeout_queues, ttl_str, strlen(ttl_str), freeQueue);
         }
    }
@@ -233,7 +233,7 @@ void _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
 void _removeNode(Lawn* lawn, ElementQueueNode* node)
 {
     char ttl_str[256];
-    sprintf(ttl_str, "%llu", node->ttl_queue);
+    sprintf(ttl_str, "%lu", node->ttl_queue);
     ElementQueue* queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
     
     if (node->expiration <= lawn->next_expiration){
@@ -276,7 +276,7 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
     //create new node
     ElementQueueNode* new_node = NewNode(element, len, ttl_ms);
     // put node in correct ttl queue
-    sprintf(ttl_str, "%llu", new_node->ttl_queue);
+    sprintf(ttl_str, "%lu", new_node->ttl_queue);
     ElementQueue* new_queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
     if (new_queue == NULL || new_queue == TRIEMAP_NOTFOUND){
         // create new ttl queue
@@ -346,7 +346,7 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
  */
 mstime_t next_at(Lawn* lawn){
     
-    // printf("node: %llu next: %llu diff: %lld\n", node->expiration, lawn->next_expiration, node->expiration - lawn->next_expiration);
+    // printf("node: %lu next: %lu diff: %lld\n", node->expiration, lawn->next_expiration, node->expiration - lawn->next_expiration);
     if (lawn->next_expiration == 0){
         ElementQueueNode* next_node = _get_next_node(lawn);
         if (next_node == NULL){
