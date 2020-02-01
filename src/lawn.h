@@ -29,6 +29,7 @@
 
 #define LAWN_LATANCY_MS 1 // elements will be poped prematurly at most this time
 
+
 /***************************
  *  Linked Queue Definitions
  ***************************/
@@ -65,6 +66,15 @@ typedef struct lawn{
 Lawn* newLawn(void);
 
 void freeLawn(Lawn* dehy);
+
+
+/***************************
+ *    Function Alias
+ ***************************/
+
+#define lawnAdd set_element_ttl
+#define lawnDel del_element_exp
+#define lawnPop pop_expired
 
 /************************************
  *   General DS handling functions

@@ -14,6 +14,7 @@ SOURCEDIR=..
 CC_SOURCES = $(wildcard $(SOURCEDIR)/*.c)
 CC_SOURCES += $(wildcard $(SOURCEDIR)/utils/*.c)
 CC_SOURCES += $(wildcard $(SOURCEDIR)/trie/*.c)
+CC_SOURCES += $(wildcard $(SOURCEDIR)/timerwheel/*.c)
 
 # Convert all sources to .o files
 DEP_OBJECTS = $(patsubst %.c, %.o, $(CC_SOURCES) )
