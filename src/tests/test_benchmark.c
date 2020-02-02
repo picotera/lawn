@@ -38,8 +38,8 @@ typedef struct experimant_results{
     int expirations;
     mstime_t drift;
     mstime_t max_jitter;
-    float avg_insertion_time;
-    float avg_deletion_time;
+    mstime_t total_insertion_time;
+    mstime_t total_deletion_time;
     int histogram_size;
     int* histogram;
 } Results;
@@ -72,7 +72,8 @@ void print_result(Results* results)
     if (results == NULL)
     {
         printf(" T | preload | TTLs | insertions | deletions | expirations "
-            "| jitter avg (ms) | jitter max (ms) | insert(ms) | delete(ms) "
+            "| jitter avg (ms) | jitter max (ms) "
+            "| insert total (ms) | delete total (ms) "
             "| histogram\n");
     }
     else
@@ -86,8 +87,8 @@ void print_result(Results* results)
             results->expirations,
             results->drift,
             results->max_jitter,
-            results->avg_insertion_time,
-            results->avg_deletion_time,
+            results->total_insertion_time,
+            results->total_deletion_time,
             histogram_to_str(results->histogram_size, results->histogram));
     }
 }
@@ -301,8 +302,8 @@ Results* run_experimant(Lawn* lawn,
     results[0].expirations = lawn_expired_count;
     results[0].drift = lawn_jitter_sum/lawn_expired_count;
     results[0].max_jitter = lawn_max_jitter;
-    results[0].avg_insertion_time = (float)insertions_time_lawn/performed_insertions;
-    results[0].avg_deletion_time = (float)deletions_time_lawn/performed_deletions;
+    results[0].total_insertion_time = insertions_time_lawn;
+    results[0].total_deletion_time = deletions_time_lawn;
     results[0].histogram_size = histogram_size;
     results[0].histogram = lhistogram;
 
@@ -314,8 +315,8 @@ Results* run_experimant(Lawn* lawn,
     results[1].expirations = wheel_expired_count;
     results[1].drift = wheel_jitter_sum/wheel_expired_count;
     results[1].max_jitter = wheel_max_jitter;
-    results[1].avg_insertion_time = (float)insertions_time_wheel/performed_insertions;
-    results[1].avg_deletion_time = (float)deletions_time_wheel/performed_deletions;
+    results[1].total_insertion_time = insertions_time_wheel;
+    results[1].total_deletion_time = deletions_time_wheel;
     results[1].histogram_size = histogram_size;
     results[1].histogram = whistogram;
 
