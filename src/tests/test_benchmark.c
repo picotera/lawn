@@ -19,6 +19,8 @@
 #define TIMER_EXPIRED      2  // 2^1, bit 1
 #define TIMER_DELETED      4  // 2^2, bit 2
 
+#define HISTOGRAM_OFFSET  5
+
 typedef struct timerwheel{
     struct timeouts * wheel_ds;
     struct timeout * timers;
@@ -36,8 +38,32 @@ typedef struct experimant_results{
     mstime_t max_jitter;
     float avg_insertion_time;
     float avg_deletion_time;
+    int histogram_size;
+    int* histogram;
 } Results;
 
+
+char* histogram_to_str(int histogram_size, int* histogram)
+{
+    if (histogram_size <= 0)
+    {
+        return "histogram size was set to 0";
+    }
+    histogram_size = histogram_size + HISTOGRAM_OFFSET;
+    char buffer[64];
+    char* histogram_str = malloc(histogram_size*sizeof(buffer));
+    int i;
+    for (i=0; i<histogram_size; ++i)
+    {
+        char* comma_value = (i == histogram_size-1)? "":",";
+        sprintf(buffer, "[%d,%d]%s", 
+            i-HISTOGRAM_OFFSET, 
+            histogram[i], comma_value);
+        strcat(histogram_str, buffer);
+    }
+    return histogram_str;
+
+}
 
 void print_result(Results* results)
 {
@@ -47,7 +73,7 @@ void print_result(Results* results)
     }
     else
     {
-        printf(" %c | %d | %d | %d | %d | %d | %lu | %lu | %.3f | %.3f\n", 
+        printf(" %c | %d | %d | %d | %d | %d | %lu | %lu | %.3f | %.3f | %s\n", 
             results->type,
             results->preload_size,
             results->uniqe_ttls,
@@ -57,7 +83,8 @@ void print_result(Results* results)
             results->drift,
             results->max_jitter,
             results->avg_insertion_time,
-            results->avg_deletion_time);
+            results->avg_deletion_time,
+            histogram_to_str(results->histogram_size, results->histogram));
     }
 }
 
@@ -95,25 +122,14 @@ int preload(Lawn* lawn, Wheel* wheel, int preload_size, int uniqe_ttls)
 }
 
 
-void prepare_experimant(Lawn* lawn,
-                        Wheel* wheel,
-                        int n_timeouts, 
-                        int preload_size, 
-                        int uniqe_ttls)
-{
-
-
-    
-}
-
-
 Results* run_experimant(Lawn* lawn,
                    Wheel* wheel,
                    int timer_count,
                    int insertions,
                    int deletions,
                    int expirations,
-                   int uniqe_ttls)
+                   int uniqe_ttls,
+                   int histogram_size)
 {
     // init status helper datastructures
     int max_timer_id = timer_count+insertions;
@@ -136,21 +152,19 @@ Results* run_experimant(Lawn* lawn,
     mstime_t wheel_end;
 
     // init measurements
-    int histogram_halfsize = 1000;
     mstime_t insertions_time_lawn = 0;
     mstime_t deletions_time_lawn = 0;
     mstime_t lawn_max_jitter = 0;
     mstime_t lawn_jitter_sum = 0;
     int lawn_expired_count = 0;
-    int* lhistogram = calloc(2*histogram_halfsize, sizeof(int)); 
+    int* lhistogram = calloc(histogram_size + HISTOGRAM_OFFSET, sizeof(int)); 
     
     mstime_t insertions_time_wheel = 0;
     mstime_t deletions_time_wheel = 0;
     mstime_t wheel_max_jitter = 0;
     mstime_t wheel_jitter_sum = 0;
     int wheel_expired_count = 0;
-    int* whistogram = calloc(2*histogram_halfsize, sizeof(int));
-
+    int* whistogram = calloc(histogram_size + HISTOGRAM_OFFSET, sizeof(int));
 
     int performed_insertions = 0;
     int performed_deletions = 0;
@@ -224,9 +238,10 @@ Results* run_experimant(Lawn* lawn,
             int idx = timer_obj - &wheel->timers[0];
             mstime_t wjitter_raw = now - timer_obj->expires;
             mstime_t wjitter = abs(wjitter_raw);
-            if (wjitter < histogram_halfsize)
+            if ((wjitter_raw < 0 && wjitter < HISTOGRAM_OFFSET) ||
+                (wjitter < histogram_size))
             {
-                ++whistogram[wjitter_raw+histogram_halfsize];
+                ++whistogram[wjitter_raw + HISTOGRAM_OFFSET];
             }
             wheel_max_jitter = (wheel_max_jitter > wjitter) ? wheel_max_jitter : wjitter;
             wheel_jitter_sum += wjitter;
@@ -234,6 +249,7 @@ Results* run_experimant(Lawn* lawn,
             status[idx] = TIMER_EXPIRED;
         }
 
+        now = current_time_ms();
         ElementQueue* queue = lawnPop(lawn);
         while (queue->len > 0)
         {
@@ -241,9 +257,10 @@ Results* run_experimant(Lawn* lawn,
             int idx = atoi(node->element);
             mstime_t ljitter_raw = now - node->expiration;
             mstime_t ljitter = abs(ljitter_raw);
-            if (ljitter < histogram_halfsize)
+            if ((ljitter_raw < 0 && ljitter < HISTOGRAM_OFFSET) ||
+                (ljitter < histogram_size))
             {
-                ++lhistogram[ljitter_raw+histogram_halfsize];
+                ++lhistogram[ljitter_raw + HISTOGRAM_OFFSET];
             }
             lawn_max_jitter = (lawn_max_jitter > ljitter) ? lawn_max_jitter : ljitter;
             lawn_jitter_sum += ljitter;
@@ -267,7 +284,8 @@ Results* run_experimant(Lawn* lawn,
     results[0].max_jitter = lawn_max_jitter;
     results[0].avg_insertion_time = (float)insertions_time_lawn/performed_insertions;
     results[0].avg_deletion_time = (float)deletions_time_lawn/performed_deletions;
-    // results[0].histogram = lhistogram;
+    results[0].histogram_size = histogram_size;
+    results[0].histogram = lhistogram;
 
     results[1].type = 'W';
     results[1].preload_size = timer_count;
@@ -279,7 +297,8 @@ Results* run_experimant(Lawn* lawn,
     results[1].max_jitter = wheel_max_jitter;
     results[1].avg_insertion_time = (float)insertions_time_wheel/performed_insertions;
     results[1].avg_deletion_time = (float)deletions_time_wheel/performed_deletions;
-    // results[1].histogram = whistogram;
+    results[1].histogram_size = histogram_size;
+    results[1].histogram = whistogram;
 
     return results;
 }
@@ -302,21 +321,23 @@ int main(int argc, char* argv[]) {
     int deletions = 0;
     int expirations = -1;
     int indels = 0;
+    int histogram_size = 0;
 
     struct option longopts[] = {
-       { "uniqe_ttls",    required_argument, NULL,   't' }, 
-       { "preload-size",    required_argument, NULL, 'p' },
-       { "inserts",    required_argument, NULL,      'i' },
-       { "deletions",    required_argument, NULL,    'd' },
-       { "expirations",    required_argument, NULL,  'e' },
-       { "indel-actions",    required_argument, NULL,'a' },
-       { "repeat",    required_argument, NULL,       'r' },
-       { "help",    no_argument,       & do_help,    1   },
+       { "uniqe_ttls",    required_argument, NULL,      't' }, 
+       { "preload-size",    required_argument, NULL,    'p' },
+       { "inserts",    required_argument, NULL,         'i' },
+       { "deletions",      required_argument, NULL,     'd' },
+       { "expirations",      required_argument, NULL,   'e' },
+       { "indel-actions",      required_argument, NULL, 'a' },
+       { "repeat",    required_argument, NULL,          'r' },
+       { "histogram_size", required_argument, NULL, 'w' },
+       { "help",    no_argument,       & do_help,    1      },
        // { "verbose", no_argument,       & do_verbose, 1   },
        { 0, 0, 0, 0 }
     };
     char c;
-    while ((c = getopt_long(argc, argv, ":ht:p:i:d:a:r:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, ":ht:p:i:d:a:r:w:", longopts, NULL)) != -1) {
         switch (c) {
         case 't':
             uniqe_ttls = atoi(optarg);
@@ -338,6 +359,9 @@ int main(int argc, char* argv[]) {
             break;
         case 'r':
             experimant_repetition = atoi(optarg);
+            break;
+        case 'w':
+            histogram_size = atoi(optarg);
             break;
         case 'h':
             do_help = 1;
@@ -400,6 +424,7 @@ int main(int argc, char* argv[]) {
     printf("expirations %d\n", expirations);
     printf("n_timeouts %d\n", n_timeouts);
     printf("experimant_repetition %d\n", experimant_repetition);
+    printf("histogram_size %d\n", histogram_size);
     printf("uniqe_ttls %d\n", uniqe_ttls);
 
 
@@ -425,7 +450,7 @@ int main(int argc, char* argv[]) {
         
         printf("running round %d\n", i+1);
         Results* measurements = run_experimant(lawn, wheel, 
-            preload_size, inserts, deletions, expirations, uniqe_ttls);
+            preload_size, inserts, deletions, expirations, uniqe_ttls, histogram_size);
         all_results[2*i] = &measurements[0];
         all_results[2*i+1] = &measurements[1];
         // cleanup(lawn, wheel);
@@ -435,7 +460,7 @@ int main(int argc, char* argv[]) {
     print_result(NULL); // print header
     for (i = 0; i < 2*experimant_repetition; i=i+2)
     {
-        print_result(all_results[i]);        
+        print_result(all_results[i]);
     }
 
     for (i = 1; i < 2*experimant_repetition; i=i+2) 
