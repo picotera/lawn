@@ -1,4 +1,5 @@
 import argparse
+import subprocess
 
 def calc_all_permutations(options_dict, permutatable_field):
     permutation_params = options_dict[permutatable_field][1]
@@ -35,12 +36,18 @@ def results_to_dict(results):
 
 # run test via calling the programm
 def run_test(params, is_dry=True):
-    command = "./test_benchmark.run "
-    for param in params:
-        command += " --" + param + " " + str(params[param])
-    print(command)
+    command = ["./test_benchmark.run"]
     if is_dry:
-        return None
+        command.append("--dry-run")
+    else:
+        command.append("--script-mode")
+
+    for param in params:
+        command.append("--" + param)
+        command.append(str(params[param]))
+    print(command)
+    result = subprocess.run(command, stdout=subprocess.PIPE)
+    print(result.stdout.decode('utf-8'))
     # return
     # res = system.call("") #TODO:
     # return results_to_dict(res)
@@ -89,7 +96,7 @@ if __name__ == "__main__":
         help='run tests and save results')
     parser.add_argument('--analize', dest='analize', action='store_false', default=True,
         help='analize saved results')
-    parser.add_argument('--dry-run', dest='dry_run', action='store_false', default=True,
+    parser.add_argument('--dry-run', dest='dry_run', action='store_true', default=False,
         help='just print the actions that would have taken place')
 
 
@@ -103,46 +110,46 @@ if __name__ == "__main__":
         "expirations" :    (0,     [0, 1000, 10000, 1000000]),
         "indel-actions" :  (0,     [0, 100, 1000, 10000, 100000, 1000000, 5000000, 50000000]),
         "repeat" :         (0,     [args.repeat]),
-        "histogram_size" : (0,     [20]),
+        "histogram-size" : (0,     [20]),
     }
-
 
 
     print("\n======= UNIQUE TTLs ========")
     #["indel-actions", "unique_ttls", "preload-size", "expirations"]
     test_results = []
-    for params in calc_all_permutations(options_dict, "unique-ttls"):
-        if args.run_tests:
+    if args.run_tests:
+        for params in calc_all_permutations(options_dict, "unique-ttls"):
             run_test(params, args.dry_run)
             # test_result = run_test(params)
+
     if args.analize:
-        plot_scatter_graph("jitter avg (ms)", "TTLs", test_result)
+        # plot_scatter_graph("jitter avg (ms)", "TTLs", test_result)
+        pass
         # plot_histogram_graph(test_result)
 
 
     print("\n======= PRELOAD SIZE ========")
 
-    for params in calc_all_permutations(options_dict, "preload-size"):
-        if args.run_tests:
+    if args.run_tests:
+        for params in calc_all_permutations(options_dict, "preload-size"):
             run_test(params, args.dry_run)
             # test_result = run_test(params)
+
     if args.analize:
         plot_scatter_graph("jitter avg (ms)", "preload", test_result)
-        # plot_histogram_graph(test_result)
+        plot_histogram_graph(test_result)
 
     print("\n======= IN/DEL ACTIONS ========")
 
-    for params in calc_all_permutations(options_dict, "indel-actions"):
-        if args.run_tests:
+    if args.run_tests:
+        for params in calc_all_permutations(options_dict, "indel-actions"):
             run_test(params, args.dry_run)
             # test_result = run_test(params)
+
     if args.analize:
-        # plot_histogram_graph(test_result)
         plot_scatter_graph("insert total (ms)", "indel-actions", test_result)
         plot_scatter_graph("delete total (ms)", "indel-actions", test_result)
         
         
         # test_results.append(test_result)
         # TODO: can we learn sotmthing from combinig graphs?
-        
-
