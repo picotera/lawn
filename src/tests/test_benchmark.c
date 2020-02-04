@@ -78,7 +78,7 @@ void print_result(Results* results)
     }
     else
     {
-        printf(" %c | %d | %d | %d | %d | %d | %lu | %lu | %.3f | %.3f | %s\n", 
+        printf(" %c | %d | %d | %d | %d | %d | %lu | %lu | %lu | %lu | %s\n",
             results->type,
             results->preload_size,
             results->unique_ttls,
@@ -106,7 +106,16 @@ void cleanup(Lawn* lawn, Wheel* wheel)
 int preload(Lawn* lawn, Wheel* wheel, int preload_size, int unique_ttls) 
 {
 
-    mstime_t ttl_ms = PRELOAD_OFFSET_MS + (random() % unique_ttls) * 100; // from 5.1 second up
+
+    mstime_t ttl_ms;
+    if (unique_ttls < 100)
+    {
+        ttl_ms = PRELOAD_OFFSET_MS + (random() % unique_ttls) * 1000;
+    }
+    else
+    {
+        ttl_ms = PRELOAD_OFFSET_MS + (random() % unique_ttls) * 100;
+    }
     
     char* idx_str = calloc(128, sizeof(char)); // placeholder for itoa
     int i;
@@ -342,6 +351,8 @@ int main(int argc, char* argv[]) {
     int expirations = -1;
     int indels = 0;
     int histogram_size = 0;
+    int script_mode = 0;
+    int dryrun_mode = 0;
 
     struct option longopts[] = {
        { "unique-ttls",    required_argument, NULL,     'u' }, 
@@ -352,12 +363,14 @@ int main(int argc, char* argv[]) {
        { "indel-actions",      required_argument, NULL, 'a' },
        { "repeat",    required_argument, NULL,          'r' },
        { "histogram-size", required_argument, NULL,     'w' },
-       { "help",    no_argument,       & do_help,    1      },
+       { "script-mode", no_argument,   & script_mode,   's' },
+       { "dry-run", no_argument,   & dryrun_mode,       'x' },
+       { "help",    no_argument,       & do_help,        1  },
        // { "verbose", no_argument,       & do_verbose, 1   },
        { 0, 0, 0, 0 }
     };
     char c;
-    while ((c = getopt_long(argc, argv, ":hu:p:i:d:e:a:r:w:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, ":hxsu:p:i:d:e:a:r:w:", longopts, NULL)) != -1) {
         switch (c) {
         case 'u':
             unique_ttls = atoi(optarg);
@@ -382,6 +395,12 @@ int main(int argc, char* argv[]) {
             break;
         case 'w':
             histogram_size = atoi(optarg);
+            break;
+        case 's':
+            script_mode = 1;
+            break;
+        case 'x':
+            dryrun_mode = 1;
             break;
         case 'h':
             do_help = 1;
@@ -417,7 +436,11 @@ int main(int argc, char* argv[]) {
     // randomly split the indels to inserts and deletions
     if (indels)
     {
-        printf("randomly splitting %d indels to inserts and deletions (overriding any user set values)\n", indels);
+        if (!script_mode)
+        {
+            printf("randomly splitting %d indels to inserts and "
+                "deletions (overriding any user set values)\n", indels);
+        }
         inserts = random() % indels;
         deletions = indels - inserts; 
     }
@@ -433,21 +456,33 @@ int main(int argc, char* argv[]) {
     if (expirations < 0 || expirations > n_timeouts)
     {
         expirations = inserts;
-        printf("expirations value not set or more than total timers, "
-            "setting to insertions: %d (to disable explicitly set to 0 by runnig -e 0)\n", expirations);
+        if (!script_mode)
+        {
+            printf("expirations value not set or more than total timers, "
+                "setting to insertions: %d (to disable explicitly set to "
+                "0 by runnig -e 0)\n", expirations);
+        }
 
     }
 
-    printf("==== user input ====\n");
-    printf("preload-size %d\n", preload_size);
-    printf("inserts %d\n", inserts);
-    printf("deletions %d\n", deletions);
-    printf("expirations %d\n", expirations);
-    printf("n_timeouts %d\n", n_timeouts);
-    printf("experimant_repetition %d\n", experimant_repetition);
-    printf("histogram-size %d\n", histogram_size);
-    printf("unique-ttls %d\n", unique_ttls);
+    if (!script_mode)
+    {
+        printf("==== user input ====\n");
+        printf("preload-size %d\n", preload_size);
+        printf("inserts %d\n", inserts);
+        printf("deletions %d\n", deletions);
+        printf("expirations %d\n", expirations);
+        printf("n_timeouts %d\n", n_timeouts);
+        printf("experimant_repetition %d\n", experimant_repetition);
+        printf("histogram-size %d\n", histogram_size);
+        printf("unique-ttls %d\n", unique_ttls);
+    }
 
+    if (dryrun_mode)
+    {
+        if (!script_mode) { printf("-> DRY-RUN mode, exiting\n"); }
+        return 0;
+    }
 
     Results** all_results = malloc(2*experimant_repetition*sizeof(Results));
 
@@ -469,12 +504,15 @@ int main(int argc, char* argv[]) {
         timeouts_update(wheel->wheel_ds, now);
         preload(lawn, wheel, preload_size, unique_ttls);
         
-        printf("running round %d\n", i+1);
+        if (!script_mode)
+        {
+            printf("round %d/%d\n", i+1, experimant_repetition);
+        }
         Results* measurements = run_experimant(lawn, wheel, 
             preload_size, inserts, deletions, expirations, unique_ttls, histogram_size);
         all_results[2*i] = &measurements[0];
         all_results[2*i+1] = &measurements[1];
-        cleanup(lawn, wheel);
+        // cleanup(lawn, wheel);
     }
 
 
