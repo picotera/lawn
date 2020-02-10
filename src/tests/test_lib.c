@@ -130,8 +130,9 @@ int test_del_element_exp() {
   if (saved_ms != expected) {
     printf("ERROR: expected %lu but found %lu\n", expected, saved_ms);
     retval = FAIL;
-  } else
-    retval = SUCCESS;
+  } 
+  else if (del_element_exp(store, key) == LAWN_ERR) return FAIL;
+  else retval = SUCCESS;
 
   freeLawn(store);
   return retval;
@@ -257,17 +258,22 @@ int test_pop_expired() {
         retval = FAIL;
       } else {
         ElementQueueNode* node1 = queuePop(queue);
-        char* expexted_elem1 = key3;
+        char* expected_elem1 = key3;
         ElementQueueNode* node2 = queuePop(queue);
-        char* expexted_elem2 = key4;
-        if (strcmp(node1->element, expexted_elem1) != 0){
-          printf("ERROR: expected element to contain %s but found %s\n", expexted_elem1, node1->element);
+        char* expected_elem2 = key4;
+        if (strcmp(node1->element, expected_elem1) != 0){
+          printf("ERROR: expected element to contain %s but found %s\n", expected_elem1, node1->element);
           retval = FAIL;
         }
-        if (strcmp(node2->element, expexted_elem2) != 0){
-          printf("ERROR: expected element to contain %s but found %s\n", expexted_elem2, node2->element);
+        if (strcmp(node2->element, expected_elem2) != 0){
+          printf("ERROR: expected element to contain %s but found %s\n", expected_elem2, node2->element);
           retval = FAIL;
         }
+        // delete expired, to see if fails quitly
+        if (del_element_exp(store, expected_elem1) == LAWN_ERR){
+          return FAIL;
+        }
+          
         freeNode(node1);
         freeNode(node2);
       }

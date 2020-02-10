@@ -27,7 +27,7 @@
 #define LAWN_OK 0
 #define LAWN_ERR 1
 
-#define LAWN_LATANCY_MS 1 // elements will be poped prematurly at most this time
+#define LAWN_LATANCY_PADDING_MS 0 // elements will be poped prematurly at most this time
 
 
 /***************************

@@ -121,6 +121,7 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
 
     if (queue->len == 1)
     {
+        // remove last item and delete from mapping
         queue->head = NULL;
         queue->tail = NULL;
         if (lawn != NULL) {
@@ -132,7 +133,7 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
     }
 
     //hot circuit the node (carefull when pulling from tail or head)
-    if (node == queue->head)
+    if ((node == queue->head) || (node->prev == NULL))
     {
         queue->head = queue->head->next;
         queue->head->prev = NULL;
@@ -142,7 +143,8 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
         node->prev->next = node->next;
     }
 
-    if (node == queue->tail) {
+    if ((node == queue->tail) || (node->next == NULL))
+    {
         queue->tail = node->prev;
         queue->tail->next = NULL;
     }
@@ -226,16 +228,17 @@ void _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
         TrieMap_Add(lawn->element_nodes, node->element, node->element_len, node , swapCB);
         if (node->expiration < lawn->next_expiration){
             lawn->next_expiration = node->expiration;
-}
+        }
     }
 }
 
 void _removeNode(Lawn* lawn, ElementQueueNode* node)
 {
     char ttl_str[256];
+
     sprintf(ttl_str, "%lu", node->ttl_queue);
     ElementQueue* queue = TrieMap_Find(lawn->timeout_queues, ttl_str, strlen(ttl_str));
-    
+
     if (node->expiration <= lawn->next_expiration){
             lawn->next_expiration = 0;
     }
@@ -376,7 +379,7 @@ ElementQueueNode* pop_next(Lawn* lawn) {
 
 ElementQueue* pop_expired(Lawn* lawn) {
     ElementQueue* retval = newQueue();
-    mstime_t now = current_time_ms() + LAWN_LATANCY_MS;
+    mstime_t now = current_time_ms() + LAWN_LATANCY_PADDING_MS;
     if (now < lawn->next_expiration){
             return retval;
     }
@@ -390,7 +393,9 @@ ElementQueue* pop_expired(Lawn* lawn) {
         ElementQueue* queue = (ElementQueue*)queue_pointer;
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {
             if (queue->head->expiration <= now){
-                queuePush(retval, _queuePop(lawn, queue));
+                ElementQueueNode* node = _queuePop(lawn, queue);
+                _removeNodeFromMapping(lawn, node);
+                queuePush(retval, node);
             }else{
                 if ((lawn->next_expiration == 0) || 
                     (queue->head->expiration < lawn->next_expiration))
