@@ -232,6 +232,7 @@ void _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
     }
 }
 
+
 void _removeNode(Lawn* lawn, ElementQueueNode* node)
 {
     char ttl_str[256];
@@ -249,6 +250,8 @@ void _removeNode(Lawn* lawn, ElementQueueNode* node)
     }
 }
 
+
+
 /************************************
  * 
  *           DS handling
@@ -262,19 +265,13 @@ size_t ttl_count(Lawn* lawn){
     return lawn->element_nodes->cardinality;
 }
 
+
 /*
- * Insert ttl for a new key or update an existing one
+ * Insert ttl for a new key WITHOUT CHECKING for duplicate element keys
  * @return LAWN_OK on success, LAWN_ERR on error
  */
-int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
-    ElementQueueNode* node = TrieMap_Find(lawn->element_nodes, element, len);
-
-    if (node != NULL && node != TRIEMAP_NOTFOUND){
-        // in case ther's a duplicate
-        _removeNode(lawn, node);
-        freeNode(node);
-    } 
-
+int add_new_node(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms)
+{
     char ttl_str[256];
     //create new node
     ElementQueueNode* new_node = NewNode(element, len, ttl_ms);
@@ -289,7 +286,23 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
     queuePush(new_queue, new_node);
     _addNodeToMapping(lawn, new_node);
     return LAWN_OK;
-   
+}
+
+
+/*
+ * Insert ttl for a new key or update an existing one
+ * @return LAWN_OK on success, LAWN_ERR on error
+ */
+int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
+    ElementQueueNode* node = TrieMap_Find(lawn->element_nodes, element, len);
+
+    if (node != NULL && node != TRIEMAP_NOTFOUND){
+        // in case ther's a duplicate
+        _removeNode(lawn, node);
+        freeNode(node);
+    }
+
+    return add_new_node(lawn, element, len, ttl_ms);
 }
 
 
