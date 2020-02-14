@@ -21,9 +21,9 @@
 #ifndef LAWN_LIB_H
 #define LAWN_LIB_H
 
-#include "trie/triemap.h"
 #include "utils/millisecond_time.h"
-#include <sys/queue.h> /* TAILQ(3) */
+#include "utils/hashmap.h" // libbpf hashmap (Linux impl. by Facebook)
+#include <sys/queue.h> // TAILQ(3)
 
 #define LAWN_OK 0
 #define LAWN_ERR 1
@@ -54,9 +54,12 @@ typedef struct element_queue{
  *    Lawn Definition
  ***************************/
 
+typedef struct hashmap_entry HashMapEntry;
+typedef struct hashmap HashMap;
+
 typedef struct lawn{
-    TrieMap * timeout_queues; //<ttl_queue,ElementQueue>
-    TrieMap * element_nodes; //<element_id,node*>
+    HashMap * timeout_queues; //<ttl_queue,ElementQueue>
+    HashMap * element_nodes; //<element_id,node*>
     mstime_t next_expiration;
 } Lawn;
 
