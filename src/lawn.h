@@ -23,6 +23,7 @@
 
 #include "trie/triemap.h"
 #include "utils/millisecond_time.h"
+#include <sys/queue.h> /* TAILQ(3) */
 
 #define LAWN_OK 0
 #define LAWN_ERR 1
@@ -84,6 +85,13 @@ void freeLawn(Lawn* dehy);
  * @return the number of uniqe ttl entries in the lawn
  */
 size_t ttl_count(Lawn* dehy);
+
+/*
+ * Insert ttl for a new key WITHOUT CHECKING for duplicate element keys.
+ * This is an UNSAFE finction, use of set_element_ttl is preferred.
+ * @return LAWN_OK on success, LAWN_ERR on error
+ */
+int add_new_node(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms);
 
 /*
  * Insert ttl for a new key or update an existing one

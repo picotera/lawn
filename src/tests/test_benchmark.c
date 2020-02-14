@@ -19,9 +19,13 @@
 #define TIMER_EXPIRED      2  // 2^1, bit 1
 #define TIMER_DELETED      4  // 2^2, bit 2
 
-#define HISTOGRAM_OFFSET  5
+#define HISTOGRAM_OFFSET  2
 
 #define PRELOAD_OFFSET_MS  1000
+
+#define MAX_TTL_MS 1000 * 10 // one minute constant heavy load
+
+#define PRINTOUT_RESOLUTION 100000
 
 typedef struct timerwheel{
     struct timeouts * wheel_ds;
@@ -53,7 +57,7 @@ char* histogram_to_str(int histogram_size, int* histogram)
     }
     histogram_size = histogram_size + HISTOGRAM_OFFSET;
     char buffer[64];
-    char* histogram_str = malloc(histogram_size*sizeof(buffer));
+    char* histogram_str = calloc(histogram_size*sizeof(buffer), sizeof(char));
     int i;
     for (i=0; i<histogram_size; ++i)
     {
@@ -71,14 +75,22 @@ void print_result(Results* results)
 {
     if (results == NULL)
     {
-        printf(" T | preload | TTLs | insertions | deletions | expirations "
-            "| jitter avg (ms) | jitter max (ms) "
-            "| insert total (ms) | delete total (ms) "
-            "| histogram\n");
+        printf(" %s | %8s \t| %4s \t| %8s \t| %8s \t| %10s \t| %8s \t| %8s \t| %8s \t| %8s \t| %s\n",
+            "T",
+            "preload",
+            "TTLs",
+            "inserts",
+            "deletions",
+            "expirations",
+            "drift",
+            "jittter",
+            "ins tot",
+            "del tot",
+            "histogram");
     }
     else
     {
-        printf(" %c | %d | %d | %d | %d | %d | %lu | %lu | %lu | %lu | %s\n",
+        printf(" %c | %8d \t| %4d \t| %8d \t| %8d \t| %10d \t| %8lu \t| %8lu \t| %8lu \t| %8lu \t| %s\n",
             results->type,
             results->preload_size,
             results->unique_ttls,
@@ -94,45 +106,55 @@ void print_result(Results* results)
 }
 
 
-void cleanup(Lawn* lawn, Wheel* wheel)
+void cleanup(Lawn* lawn, Wheel* wheel, int total_timers)
 {
-    timeouts_close(wheel->wheel_ds);
-    if (wheel->timers) free(wheel->timers);
-    freeLawn(lawn);
+    if (wheel)
+    {
+        timeouts_close(wheel->wheel_ds);
+        int i;
+        for (i = 0; i < total_timers; ++i)
+        {
+            timeout_del(&wheel->timers[i]);
+        }
+    // free(wheel->timers);
+    }
+
+    if (lawn)
+    {
+        freeLawn(lawn);
+    }
 }
 
+mstime_t generate_ttl(int unique_ttls)
+{
+    int choice = random() % unique_ttls;
+    mstime_t ttl_ms = MAX_TTL_MS/(choice+1); // c+1 to avert div by 0
+    return ttl_ms;
+}
 
 // for number of timers PRELOAD in the DS, measure:
 int preload(Lawn* lawn, Wheel* wheel, int preload_size, int unique_ttls) 
 {
-
-
-    mstime_t ttl_ms;
-    if (unique_ttls < 100)
-    {
-        ttl_ms = PRELOAD_OFFSET_MS + (random() % unique_ttls) * 1000;
-    }
-    else
-    {
-        ttl_ms = PRELOAD_OFFSET_MS + (random() % unique_ttls) * 100;
-    }
-    
+    mstime_t ttl_ms = PRELOAD_OFFSET_MS + generate_ttl(unique_ttls);
     char* idx_str = calloc(128, sizeof(char)); // placeholder for itoa
     int i;
     for (i = 0; i < preload_size; ++i)
     {
         // use i as the next id to populate
         // randomly choose a ttl for the new timer
-        mstime_t ttl_ms = 3 + (random() % unique_ttls) * 100; // from 1.1 second up
         sprintf(idx_str, "%d", i);
         int idx_len = strlen(idx_str);   
-        lawnAdd(lawn, idx_str, idx_len, ttl_ms);
-        timeout_init(&wheel->timers[i], 0); //TIMEOUT_ABS);
-        timeouts_add(wheel->wheel_ds, &wheel->timers[i], ttl_ms);
+        if (lawn)
+        {
+            add_new_node(lawn, idx_str, idx_len, ttl_ms);
+        }
+        if (wheel)
+        {
+            timeout_init(&wheel->timers[i], 0); //TIMEOUT_ABS);
+            timeouts_add(wheel->wheel_ds, &wheel->timers[i], ttl_ms);
+        }
         
     }
-
-    
 }
 
 
@@ -163,6 +185,7 @@ Results* run_experimant(Lawn* lawn,
 
     mstime_t lawn_start;
     mstime_t lawn_end;
+    mstime_t wheel_start;
     mstime_t wheel_end;
 
     // init measurements
@@ -183,29 +206,42 @@ Results* run_experimant(Lawn* lawn,
     int performed_insertions = 0;
     int performed_deletions = 0;
 
-    while ((performed_insertions <= insertions) 
+    // int insertions_reported = 0;
+    // int deletions_reported = 0;
+    // int expired_reported = 0;
+
+    // int action_loops = 0;
+
+    while ((performed_insertions < insertions)
         || (
             (performed_deletions <= deletions) && 
             (performed_deletions < timer_count-1) 
-            ) 
+            )
         || (
+            lawn &&
             (lawn_expired_count <= expirations) && 
             (lawn_expired_count < timer_count-1)
             )
         || (
+            wheel &&
             (wheel_expired_count <= expirations) && 
             (wheel_expired_count < timer_count-1) 
             )
         )
     {
+        // printf("%d/%d/%d/%d\n", performed_insertions,
+        //     performed_deletions, lawn_expired_count, wheel_expired_count);
+
         // randomly either insert, delete, or both
         int insert = (
             (performed_insertions <= insertions) && 
             (rand() % 2 == 0 ));
         
+        int max_expired = (wheel_expired_count > lawn_expired_count)?
+                                    wheel_expired_count : lawn_expired_count;
         int delete = (
-            (performed_deletions <= deletions) && 
-            (performed_deletions < next_idx_to_start) && 
+            (performed_deletions <= deletions) &&
+            (performed_deletions + max_expired < next_idx_to_start) &&
             (rand() % 2 == 0 ));
 
         if (insert)
@@ -215,119 +251,169 @@ Results* run_experimant(Lawn* lawn,
             int idx_len = strlen(idx_str);
 
             // randomly choose a ttl for the new timer
-            mstime_t ttl_ms = (random() % unique_ttls) * 100; // from 0.1 second up
+            mstime_t ttl_ms = generate_ttl(unique_ttls);
 
-            lawn_start = current_time_ms();
-            lawnAdd(lawn, idx_str, idx_len, ttl_ms);
-            lawn_end = current_time_ms();
-            timeout_init(&wheel->timers[next_idx_to_start], 0);// TIMEOUT_ABS);
-            timeouts_add(wheel->wheel_ds, &wheel->timers[next_idx_to_start], ttl_ms);
-            mstime_t wheel_end = current_time_ms();
+            if (lawn)
+            {
+                lawn_start = current_time_ms();
+                add_new_node(lawn, idx_str, idx_len, ttl_ms);
+                lawn_end = current_time_ms();
+            }
+
+            if (wheel)
+            {
+                wheel_start = current_time_ms();
+                timeout_init(&wheel->timers[next_idx_to_start], 0);
+                timeouts_add(wheel->wheel_ds,
+                            &wheel->timers[next_idx_to_start], ttl_ms);
+                wheel_end = current_time_ms();
+            }
+
             insertions_time_lawn +=  lawn_end - lawn_start;
-            insertions_time_wheel += wheel_end - lawn_start;
+            insertions_time_wheel += wheel_end - wheel_start;
 
             status[next_idx_to_start] = TIMER_RUNNING;
             ++next_idx_to_start;
             ++performed_insertions;
         }
+
         if (delete)
         {
-
             // select a random item that is still there
             int idx;
             do
             {
-                idx = random() % next_idx_to_start;
+            idx = random() % next_idx_to_start;
+
             }
             while (status[idx] != TIMER_RUNNING);
 
-            sprintf(idx_str, "%d", idx);
+            if (lawn)
+            {
+                sprintf(idx_str, "%d", idx);
+                lawn_start = current_time_ms();
+                lawnDel(lawn, idx_str);
+                lawn_end = current_time_ms();
+            }
 
-            lawn_start = current_time_ms();
-            lawnDel(lawn, idx_str);
-            lawn_end = current_time_ms();
-            timeout_del(&wheel->timers[idx]);
-            mstime_t wheel_end = current_time_ms();
+            if (wheel)
+            {
+                wheel_start = current_time_ms();
+                timeout_del(&wheel->timers[idx]);
+                wheel_end = current_time_ms();
+            }
             deletions_time_lawn +=  lawn_end - lawn_start;
-            deletions_time_wheel += wheel_end - lawn_start;
+            deletions_time_wheel += wheel_end - wheel_start;
             
             status[idx] = TIMER_DELETED;
             ++performed_deletions;
         }
 
-        // pop expired items from both data structure    
+        // if (action_loops % PRINTOUT_RESOLUTION == 0)
+        // {
+        //     printf("%d/", wheel_expired_count);
+        // }
+
+        // pop expired items from both data structure
+
         mstime_t now = current_time_ms();
         
-        // advance time for wheel
-        timeouts_update(wheel->wheel_ds, now);
-        // pop expired timers from both DBs
-        struct timeout * timer_obj;
-        while (NULL != (timer_obj = timeouts_get(wheel->wheel_ds))) {
-            // do some POINTER ARITHMATICS to understand what just poped
-            int idx = timer_obj - &wheel->timers[0];
-            mstime_t wjitter_raw = now - timer_obj->expires;
-            mstime_t wjitter = abs(wjitter_raw);
-            if ((wjitter_raw < 0 && wjitter < HISTOGRAM_OFFSET) ||
-                (wjitter < histogram_size))
-            {
-                ++whistogram[wjitter_raw + HISTOGRAM_OFFSET];
+        if (wheel)
+        {
+            // advance time for wheel
+            timeouts_update(wheel->wheel_ds, now);
+            // pop expired timers from both DBs
+            struct timeout * timer_obj;
+            while (NULL != (timer_obj = timeouts_get(wheel->wheel_ds))) {
+                // do some POINTER ARITHMATICS to understand what just poped
+                int idx = timer_obj - &wheel->timers[0];
+                mstime_t wjitter_raw = now - timer_obj->expires;
+                mstime_t wjitter = abs(wjitter_raw);
+                if ((wjitter_raw < 0 && wjitter < HISTOGRAM_OFFSET) ||
+                    (wjitter < histogram_size))
+                {
+                    ++whistogram[wjitter_raw + HISTOGRAM_OFFSET];
+                }
+                wheel_max_jitter = (wheel_max_jitter > wjitter) ? wheel_max_jitter : wjitter;
+                wheel_jitter_sum += wjitter;
+                ++wheel_expired_count;
+                status[idx] = TIMER_EXPIRED;
             }
-            wheel_max_jitter = (wheel_max_jitter > wjitter) ? wheel_max_jitter : wjitter;
-            wheel_jitter_sum += wjitter;
-            ++wheel_expired_count;
-            status[idx] = TIMER_EXPIRED;
         }
 
-        now = current_time_ms();
-        ElementQueue* queue = lawnPop(lawn);
-        while (queue->len > 0)
+        // if (action_loops % PRINTOUT_RESOLUTION == 0)
+        // {
+        //     printf("%d\n", lawn_expired_count);
+        // }
+
+        if (lawn)
         {
-            ElementQueueNode* node = queuePop(queue);
-            int idx = atoi(node->element);
-            mstime_t ljitter_raw = now - node->expiration;
-            mstime_t ljitter = abs(ljitter_raw);
-            if ((ljitter_raw < 0 && ljitter < HISTOGRAM_OFFSET) ||
-                (ljitter < histogram_size))
+            now = current_time_ms();
+            ElementQueue* queue = lawnPop(lawn);
+            while (queue->len > 0)
             {
-                ++lhistogram[ljitter_raw + HISTOGRAM_OFFSET];
+                ElementQueueNode* node = queuePop(queue);
+                int idx = atoi(node->element);
+                mstime_t ljitter_raw = now - node->expiration;
+                mstime_t ljitter = abs(ljitter_raw);
+                if ((ljitter_raw < 0 && ljitter < HISTOGRAM_OFFSET) ||
+                    (ljitter < histogram_size))
+                {
+                    ++lhistogram[ljitter_raw + HISTOGRAM_OFFSET];
+                }
+                lawn_max_jitter = (lawn_max_jitter > ljitter) ? lawn_max_jitter : ljitter;
+                lawn_jitter_sum += ljitter;
+                ++lawn_expired_count;
+                status[idx] = TIMER_EXPIRED;
+                freeNode(node);
             }
-            lawn_max_jitter = (lawn_max_jitter > ljitter) ? lawn_max_jitter : ljitter;
-            lawn_jitter_sum += ljitter;
-            ++lawn_expired_count;
-            status[idx] = TIMER_EXPIRED;
-            freeNode(node);
+            freeQueue(queue);
         }
-        freeQueue(queue);
+
     }
-    // free(status);
+
+    free(status);
+
+    int result_slots = 0;
+    int idx = 0;
+    if (lawn) {++result_slots;}
+    if (wheel) {++result_slots;}
 
     Results* results = malloc(2*sizeof(Results));
 
-    results[0].type = 'L';
-    results[0].preload_size = timer_count;
-    results[0].unique_ttls = unique_ttls;
-    results[0].insertions = insertions;
-    results[0].deletions = deletions;
-    results[0].expirations = lawn_expired_count;
-    results[0].drift = lawn_jitter_sum/lawn_expired_count;
-    results[0].max_jitter = lawn_max_jitter;
-    results[0].total_insertion_time = insertions_time_lawn;
-    results[0].total_deletion_time = deletions_time_lawn;
-    results[0].histogram_size = histogram_size;
-    results[0].histogram = lhistogram;
+    if (lawn)
+    {
+        results[idx].type = 'L';
+        results[idx].preload_size = timer_count;
+        results[idx].unique_ttls = unique_ttls;
+        results[idx].insertions = insertions;
+        results[idx].deletions = deletions;
+        results[idx].expirations = lawn_expired_count;
+        results[idx].drift = lawn_jitter_sum/lawn_expired_count;
+        results[idx].max_jitter = lawn_max_jitter;
+        results[idx].total_insertion_time = insertions_time_lawn;
+        results[idx].total_deletion_time = deletions_time_lawn;
+        results[idx].histogram_size = histogram_size;
+        results[idx].histogram = lhistogram;
+        idx++;
+    }
 
-    results[1].type = 'W';
-    results[1].preload_size = timer_count;
-    results[1].unique_ttls = unique_ttls;
-    results[1].insertions = insertions;
-    results[1].deletions = deletions;
-    results[1].expirations = wheel_expired_count;
-    results[1].drift = wheel_jitter_sum/wheel_expired_count;
-    results[1].max_jitter = wheel_max_jitter;
-    results[1].total_insertion_time = insertions_time_wheel;
-    results[1].total_deletion_time = deletions_time_wheel;
-    results[1].histogram_size = histogram_size;
-    results[1].histogram = whistogram;
+    if (wheel)
+    {
+        results[idx].type = 'W';
+        results[idx].preload_size = timer_count;
+        results[idx].unique_ttls = unique_ttls;
+        results[idx].insertions = insertions;
+        results[idx].deletions = deletions;
+        results[idx].expirations = wheel_expired_count;
+        results[idx].drift = wheel_jitter_sum/wheel_expired_count;
+        results[idx].max_jitter = wheel_max_jitter;
+        results[idx].total_insertion_time = insertions_time_wheel;
+        results[idx].total_deletion_time = deletions_time_wheel;
+        results[idx].histogram_size = histogram_size;
+        results[idx].histogram = whistogram;
+        idx++;
+    }
 
     return results;
 }
@@ -353,7 +439,7 @@ int main(int argc, char* argv[]) {
     int histogram_size = 0;
     int script_mode = 0;
     int dryrun_mode = 0;
-
+    int test_lawn, test_wheel = 0;
     struct option longopts[] = {
        { "unique-ttls",    required_argument, NULL,     'u' }, 
        { "preload-size",    required_argument, NULL,    'p' },
@@ -365,12 +451,14 @@ int main(int argc, char* argv[]) {
        { "histogram-size", required_argument, NULL,     'w' },
        { "script-mode", no_argument,   & script_mode,   's' },
        { "dry-run", no_argument,   & dryrun_mode,       'x' },
+       { "test-lawn", no_argument,   & test_lawn,       'L' },
+       { "test-wheel", no_argument,  & test_wheel,      'W' },
        { "help",    no_argument,       & do_help,        1  },
        // { "verbose", no_argument,       & do_verbose, 1   },
        { 0, 0, 0, 0 }
     };
     char c;
-    while ((c = getopt_long(argc, argv, ":hxsu:p:i:d:e:a:r:w:", longopts, NULL)) != -1) {
+    while ((c = getopt_long(argc, argv, ":hLWxsu:p:i:d:e:a:r:w:", longopts, NULL)) != -1) {
         switch (c) {
         case 'u':
             unique_ttls = atoi(optarg);
@@ -402,6 +490,12 @@ int main(int argc, char* argv[]) {
         case 'x':
             dryrun_mode = 1;
             break;
+        case 'L':
+            test_lawn = 1;
+            break;
+        case 'W':
+            test_wheel = 1;
+            break;
         case 'h':
             do_help = 1;
             break;
@@ -431,6 +525,11 @@ int main(int argc, char* argv[]) {
                     argv[0], optopt);
             break;
         }
+    }
+
+    if (!test_lawn && !test_wheel)
+    {
+        test_lawn = test_wheel = 1;
     }
 
     // randomly split the indels to inserts and deletions
@@ -480,51 +579,93 @@ int main(int argc, char* argv[]) {
 
     if (dryrun_mode)
     {
-        if (!script_mode) { printf("-> DRY-RUN mode, exiting\n"); }
+        if (!script_mode) printf("-> DRY-RUN mode, exiting\n");
         return 0;
     }
 
     Results** all_results = malloc(2*experimant_repetition*sizeof(Results));
 
     // prepare and run experimants
-    int i;
-    for (i = 0; i < experimant_repetition; ++i) 
+    for (int round = 0; round < experimant_repetition; ++round)
     {
+        Lawn* lawn = NULL;
+        Wheel* wheel = NULL;
+        int result_lines = 0;
 
-        // init Lawn
-        Lawn* lawn = newLawn();
+        if (test_lawn)
+        {
+            // init Lawn
+            lawn = newLawn();
+            result_lines++;
+        }
         
-        // init Wheel
-        int err;
-        Wheel* wheel = malloc(sizeof(Wheel));
-        wheel->wheel_ds = timeouts_open(0, &err);
-        wheel->timers = calloc(n_timeouts, sizeof(struct timeout));
+        if (test_wheel)
+        {
+            // init Wheel
+            int err;
+            wheel = malloc(sizeof(Wheel));
+            wheel->wheel_ds = timeouts_open(0, &err);
+            wheel->timers = calloc(n_timeouts, sizeof(struct timeout));
+            result_lines++;
+        }
 
         mstime_t now = current_time_ms();
-        timeouts_update(wheel->wheel_ds, now);
-        preload(lawn, wheel, preload_size, unique_ttls);
-        
-        if (!script_mode)
+        if (test_wheel)
         {
-            printf("round %d/%d\n", i+1, experimant_repetition);
+            timeouts_update(wheel->wheel_ds, now);
         }
+
+        if (!script_mode) printf("round %d/%d: ", round+1, experimant_repetition);
+
+        preload(lawn, wheel, preload_size, unique_ttls);
+
+        if (!script_mode) printf("preloaded. \n");
+
         Results* measurements = run_experimant(lawn, wheel, 
             preload_size, inserts, deletions, expirations, unique_ttls, histogram_size);
-        all_results[2*i] = &measurements[0];
-        all_results[2*i+1] = &measurements[1];
-        // cleanup(lawn, wheel);
+
+        if (!script_mode)
+        {
+            printf("done.\n");
+            print_result(NULL);
+            for (int i=0; i < result_lines; ++i)
+            {
+                print_result(&measurements[i]);
+            }
+        }
+
+        if (test_lawn && test_wheel)
+        {
+            all_results[2*round] = &measurements[0];
+            all_results[2*round+1] = &measurements[1];
+        }
+        else
+        {
+            all_results[round] = &measurements[0];
+        }
+        cleanup(lawn, wheel, n_timeouts);
     }
 
-
+    if (!script_mode) printf("==== results ====\n");
     print_result(NULL); // print header
-    for (i = 0; i < 2*experimant_repetition; i=i+2)
+    if (test_lawn && test_wheel)
     {
-        print_result(all_results[i]);
-    }
+        for (int i = 0; i < 2*experimant_repetition; i=i+2)
+        {
+            print_result(all_results[i]);
+        }
 
-    for (i = 1; i < 2*experimant_repetition; i=i+2) 
+        for (int i = 1; i < 2*experimant_repetition; i=i+2)
+        {
+            print_result(all_results[i]);
+        }
+    }
+    else
     {
-        print_result(all_results[i]);
+       for (int i = 1; i < experimant_repetition; i++)
+        {
+            print_result(all_results[i]);
+        }
     }
 
 

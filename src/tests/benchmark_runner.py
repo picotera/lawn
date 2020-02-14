@@ -123,8 +123,7 @@ if __name__ == "__main__":
             # test_result = run_test(params)
 
     if args.analize:
-        # plot_scatter_graph("jitter avg (ms)", "TTLs", test_result)
-        pass
+        plot_scatter_graph("jitter avg (ms)", "TTLs", test_result)
         # plot_histogram_graph(test_result)
 
 
