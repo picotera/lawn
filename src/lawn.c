@@ -239,32 +239,33 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
 
 
 // pull and return the element at the first location
-ElementQueueNode* _queuePop(Lawn* lawn, ElementQueue* queue) {
-   if ((queue == NULL) || (queue->head == NULL)) // if queue empty
-   {
+ElementQueueNode* _queuePop(Lawn* lawn, ElementQueue* queue) 
+{
+    if ((queue == NULL) || (queue->head == NULL)) // if queue empty
+    {
         return NULL;
-   }
+    }
 
-   // save current head
-   ElementQueueNode* node = queue->head;
+    // save current head
+    ElementQueueNode* node = queue->head;
 
-   if (queue->len == 1)
-   {
-       queue->tail = NULL;
-       queue->head = NULL;
-       if (lawn != NULL)
-       {
+    if (queue->len == 1 || queue->head->next == NULL)
+    {
+        queue->tail = NULL;
+        queue->head = NULL;
+        if (lawn != NULL)
+        {
             _removeQueueFromMapping(lawn, node->ttl_queue);
-       }
-   }
-   else // swap to new head
-   {
-       queue->head = queue->head->next;
-       queue->head->prev = NULL;
-   }
+        }
+    }
+    else // swap to new head
+    {
+        queue->head = queue->head->next;
+        queue->head->prev = NULL;
+    }
 
-   queue->len = queue->len - 1;
-   return node;
+    queue->len = queue->len - 1;
+    return node;
 
 }
 
