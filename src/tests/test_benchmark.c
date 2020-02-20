@@ -439,7 +439,8 @@ int main(int argc, char* argv[]) {
     int histogram_size = 0;
     int script_mode = 0;
     int dryrun_mode = 0;
-    int test_lawn, test_wheel = 0;
+    int test_lawn=0;
+    int test_wheel = 0;
     struct option longopts[] = {
        { "unique-ttls",    required_argument, NULL,     'u' }, 
        { "preload-size",    required_argument, NULL,    'p' },

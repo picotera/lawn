@@ -240,9 +240,12 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
 
 // pull and return the element at the first location
 ElementQueueNode* _queuePop(Lawn* lawn, ElementQueue* queue) {
-   if ((queue == NULL) || (queue->head == NULL)) { return NULL; } // if queue empty
+   if ((queue == NULL) || (queue->head == NULL)) // if queue empty
+   {
+        return NULL;
+   }
 
-   //save current head
+   // save current head
    ElementQueueNode* node = queue->head;
 
    if (queue->len == 1)
@@ -251,14 +254,11 @@ ElementQueueNode* _queuePop(Lawn* lawn, ElementQueue* queue) {
        queue->head = NULL;
        if (lawn != NULL)
        {
-           hashmap__delete(lawn->timeout_queues,
-                           &(node->ttl_queue),
-                           NULL, NULL);
+            _removeQueueFromMapping(lawn, node->ttl_queue);
        }
    }
-   else
+   else // swap to new head
    {
-       // swap to new head
        queue->head = queue->head->next;
        queue->head->prev = NULL;
    }
