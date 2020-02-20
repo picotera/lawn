@@ -1,7 +1,7 @@
 /* ###################################################################
  *  Lawn - Low Latancy Timer Data-Structure for Large Scale Systems 
- *  
- *  Autor: Adam Lev-Libfeld (adam@tamarlabs.com) 2017 
+ *
+ *  Autor: Adam Lev-Libfeld (adam@tamarlabs.com) 2017-2020
  *
  *  TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with 
  *  unlimited timer span with no degrigation in performance over a large set of timers.
@@ -38,42 +38,89 @@
 
 size_t ttl_hash_fn(const void *k, void *ctx)
 {
-    if (k == NULL || k->head == NULL)
-    {
-        return -1;
-    }
-    return k->head->ttl_queue;
+    return (size_t)k;
 }
 
 bool ttl_equal_fn(const void *a, const void *b, void *ctx)
 {
-    return ttl_hash_fn(a, ctx) == ttl_hash_fn(b, ctx);
+    return (size_t)a == (size_t)b;
 }
 
 
 // elements
 
 // based on djb2. see: http://www.cse.yorku.ca/~oz/hash.html
-unsigned long string_hash(unsigned char *str) 
+unsigned long string_hash(char *str)
 {
     unsigned long hash = 5381;
     int c;
 
     while (c = *str++)
+    {
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-
+    }
     return hash;
 }
 
 size_t elem_hash_fn(const void *k, void *ctx)
 {
-    return string_hash(k->element);
+    return string_hash((char*)k);
 }
 
 bool elem_equal_fn(const void *a, const void *b, void *ctx)
 {
-    return strcmp(a->element, b->element);
+    return (strcmp((char* )a, (char* )b) == 0);
 }
+
+
+/***************************
+ *     Mapping Utilities
+ ***************************/
+
+void _removeNodeFromMapping(Lawn* lawn, ElementQueueNode* node)
+{
+    const void *oldk;
+    void *oldv;
+    hashmap__delete(lawn->element_nodes, node->element, &oldk, &oldv);
+}
+
+
+void _removeQueueFromMapping(Lawn* lawn, int queue_ttl)
+{
+    const void* oldk;
+    void* oldv;
+    hashmap__delete(lawn->timeout_queues, &queue_ttl, &oldk, &oldv);
+    freeQueue(oldv);
+}
+
+
+
+ElementQueueNode* _findNodeInMapping(Lawn* lawn, char* element)
+{
+    void* node;
+    bool found = hashmap__find(lawn->element_nodes, element, &node);
+    if (found)
+    {
+        return (ElementQueueNode *)node;
+    }
+    return NULL;
+}
+
+
+ElementQueue* _findQueueInMapping(Lawn* lawn, mstime_t queue_ttl)
+{
+    void* queue;
+    bool found = false;
+    const void * key = (const void *)(size_t)queue_ttl;
+    found = hashmap__find(lawn->timeout_queues, key, &queue);
+    if (found)
+    {
+        return (ElementQueue*)queue;
+    }
+    return NULL;
+
+}
+
 
 
 /***************************
@@ -115,6 +162,9 @@ ElementQueue* newQueue() {
 
 
 void freeQueue(ElementQueue* queue) {
+    if (!queue || queue == NULL)
+        return;
+
     ElementQueueNode* current = queue->head;
 
     // iterate over queue and find the element that has id = element_id
@@ -201,9 +251,9 @@ ElementQueueNode* _queuePop(Lawn* lawn, ElementQueue* queue) {
        queue->head = NULL;
        if (lawn != NULL)
        {
-           hashmap__delete(lawn->timeout_queues, 
-                                node->ttl_queue, 
-                                NULL, NULL);
+           hashmap__delete(lawn->timeout_queues,
+                           &(node->ttl_queue),
+                           NULL, NULL);
        }
    }
    else
@@ -242,45 +292,31 @@ Lawn* newLawn(void)
 }
 
 
-void _removeNodeFromMapping(Lawn* lawn, ElementQueueNode* node)
-{
-    const void *oldk;
-    void *oldv;
-    hashmap__delete(lawn->element_nodes, node->element, &oldk, &oldv);
-}
-
-
-void _removeQueueFromMapping(Lawn* lawn, int queue_ttl)
-{
-    const void *oldk;
-    ElementQueue *oldv;
-    hashmap__delete(lawn->timeout_queues, queue_ttl, &oldk, &oldv);
-    freeQueue(oldv);
-}
-
-
-void _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
+int _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
 {
     if (node != NULL)
     {
         const void *oldk;
         void *oldv;
-        int err = hashmap__set(lawn->element_nodes,node->element, node, 
+        const void * key = (const void*)(node->element);
+        int err = hashmap__set(lawn->element_nodes,
+                               key, node,
                                &oldk, &oldv);
         if (err) return LAWN_ERR;
+
         if (node->expiration < lawn->next_expiration){
             lawn->next_expiration = node->expiration;
         }
     }
+    return LAWN_OK;
 }
 
 
 void _removeNode(Lawn* lawn, ElementQueueNode* node)
 {
-    ElementQueue* queue;
-    bool found = hashmap__find(lawn->timeout_queues, node->ttl_queue, &queue);
+    ElementQueue* queue = _findQueueInMapping(lawn, node->ttl_queue);
 
-    if (found && queue != NULL)
+    if (queue != NULL)
     {
         _queuePull(lawn, queue, node);
         _removeNodeFromMapping(lawn, node);
@@ -294,7 +330,7 @@ void _removeNode(Lawn* lawn, ElementQueueNode* node)
 
 void freeLawn(Lawn* lawn)
 {
-    // clear mapping, the nodes will be free'd when deleting the queues 
+    // clear mapping, the nodes will be free'd when deleting the queues
     hashmap__free(lawn->element_nodes);
 
     HashMapEntry *entry, *tmp;
@@ -309,16 +345,16 @@ void freeLawn(Lawn* lawn)
 }
 
 /************************************
- * 
+ *
  *           DS handling
- * 
+ *
  ************************************/
 
 /*
  * @return the number of uniqe ttl entries in the lawn
  */
 size_t ttl_count(Lawn* lawn){
-    return lawn->element_nodes->cardinality;
+    return hashmap__size(lawn->timeout_queues);
 }
 
 
@@ -329,21 +365,25 @@ size_t ttl_count(Lawn* lawn){
 int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
     //create new node
     ElementQueueNode* new_node = NewNode(element, len, ttl_ms);
-    
     // find correct ttl queue for node
-    ElementQueue* new_queue;
-    bool found = hashmap__find(lawn->timeout_queues, ttl_ms, &new_queue);
-    if (!found || new_queue == NULL){
+    ElementQueue* new_queue = _findQueueInMapping(lawn, ttl_ms);
+    if (new_queue == NULL){
         // queue missing, create new it and add to mapping
         new_queue = newQueue();
-        int err = hashmap__add(lawn->timeout_queues, ttl_ms, new_queue);
+        const void * key = (const void *)(size_t)ttl_ms;
+        void * value = (void *) new_queue;
+        int err = hashmap__add(lawn->timeout_queues, key, value);
         if (err) return LAWN_ERR;
     }
 
     // add node to ttl queue and mapping
     queuePush(new_queue, new_node);
-    _addNodeToMapping(lawn, new_node);
-    return LAWN_OK;
+    return _addNodeToMapping(lawn, new_node);
+}
+
+
+int add_new_node(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
+    return set_element_ttl(lawn, element, len, ttl_ms);
 }
 
 
@@ -352,10 +392,9 @@ int set_element_ttl(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms){
  * @return datetime of expiration (in milliseconds) on success, -1 on error
  */
 mstime_t get_element_exp(Lawn* lawn, char* key){
-    ElementQueueNode* node;
-    bool found = hashmap__find(lawn->element_nodes, key, &node);
-
-    if (found && node != NULL){
+    ElementQueueNode* node = _findNodeInMapping(lawn, key);
+    if (node != NULL)
+    {
         return node->expiration;
     }
     return -1;
@@ -368,9 +407,8 @@ mstime_t get_element_exp(Lawn* lawn, char* key){
  */
 int del_element_exp(Lawn* lawn, char* key)
 {
-    ElementQueueNode* node;
-    bool found = hashmap__find(lawn->element_nodes, key, &node);
-    if (found && node != NULL){
+    ElementQueueNode* node = _findNodeInMapping(lawn, key);
+    if (node != NULL){
         _removeNode(lawn, node);
         freeNode(node);
     } 
@@ -381,7 +419,7 @@ int del_element_exp(Lawn* lawn, char* key)
 
 ElementQueueNode* _get_next_node(Lawn* lawn){
     HashMapEntry *entry;
-    mstime_t qhead_exp;
+    mstime_t head_node_exp;
     ElementQueue* queue;
     ElementQueueNode* next_node = NULL;
     int bkt;
@@ -407,7 +445,6 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
  */
 mstime_t next_at(Lawn* lawn){
     
-    // printf("node: %lu next: %lu diff: %lld\n", node->expiration, lawn->next_expiration, node->expiration - lawn->next_expiration);
     if (lawn->next_expiration == 0){
         ElementQueueNode* next_node = _get_next_node(lawn);
         if (next_node == NULL){
@@ -417,18 +454,18 @@ mstime_t next_at(Lawn* lawn){
         }
     }
     return lawn->next_expiration;
-    
+
 }
 
 
 /*
  * Remove the element with the closest expiration datetime from the lawn and return it
- * @return a pointer to the node containing the element with closest 
+ * @return a pointer to the node containing the element with closest
  * expiration datetime or NULL if the lawn is empty.
  */
 ElementQueueNode* pop_next(Lawn* lawn) {
     ElementQueueNode* next_node = _get_next_node(lawn);
-        
+
     if (next_node != NULL) {
         _removeNode(lawn, next_node);
     }
@@ -444,7 +481,6 @@ ElementQueue* pop_expired(Lawn* lawn) {
 
 
     HashMapEntry *entry;
-    mstime_t qhead_exp;
     ElementQueue* queue;
     ElementQueueNode* next_node = NULL;
     int bkt;
@@ -459,7 +495,7 @@ ElementQueue* pop_expired(Lawn* lawn) {
             }
             else
             {
-                if ((lawn->next_expiration == 0) || 
+                if ((lawn->next_expiration == 0) ||
                     (queue->head->expiration < lawn->next_expiration))
                     lawn->next_expiration = queue->head->expiration;
                 break;

@@ -90,17 +90,16 @@ void freeLawn(Lawn* dehy);
 size_t ttl_count(Lawn* dehy);
 
 /*
- * Insert ttl for a new key WITHOUT CHECKING for duplicate element keys.
- * This is an UNSAFE finction, use of set_element_ttl is preferred.
- * @return LAWN_OK on success, LAWN_ERR on error
- */
-int add_new_node(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms);
-
-/*
  * Insert ttl for a new key or update an existing one
  * @return LAWN_OK on success, LAWN_ERR on error
  */
 int set_element_ttl(Lawn* dehy, char* key, size_t len, mstime_t ttl_ms);
+
+/*
+ * Alias for set_element_ttl
+ * @return LAWN_OK on success, LAWN_ERR on error
+ */
+int add_new_node(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms);
 
 /*
  * Get the expiration value for the given key

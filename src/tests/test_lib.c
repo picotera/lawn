@@ -8,6 +8,9 @@
 
 #include <time.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
 
 
 
@@ -98,9 +101,9 @@ int test_set_element_ttl() {
 int test_set_get_element_exp() {
   int retval = FAIL;
   mstime_t ttl_ms = 10000;
-  mstime_t expected = current_time_ms() + ttl_ms;
   char* key = "set_get_test_key";
   Lawn* store = newLawn();
+  mstime_t expected = current_time_ms() + ttl_ms;
   if (set_element_ttl(store, key, strlen(key), ttl_ms) == LAWN_ERR) return FAIL;
   mstime_t saved_ms = get_element_exp(store, key);
   if (saved_ms != expected) {
