@@ -39,7 +39,7 @@ CC=gcc
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c $< -o $@ -MMD -MF $(@:.o=.d)
 
 
-all: build test
+all: clean build test
 
 # Including this stuff makes sure everything gets built on changes to the source directory
 -include $(TEST_DEPS)

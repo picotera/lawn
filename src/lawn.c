@@ -87,8 +87,8 @@ void _removeNodeFromMapping(Lawn* lawn, ElementQueueNode* node)
 
 void _removeQueueFromMapping(Lawn* lawn, int queue_ttl)
 {
-    const void* oldk;
-    void* oldv;
+    const void* oldk = NULL;
+    void* oldv = NULL;
     hashmap__delete(lawn->timeout_queues, &queue_ttl, &oldk, &oldv);
     freeQueue(oldv);
 }
@@ -337,7 +337,10 @@ void freeLawn(Lawn* lawn)
     int bkt;
     hashmap__for_each_entry_safe(lawn->timeout_queues, entry, tmp, bkt) {
         // do we need this instead? _removeQueueFromMapping(lawn, queue_ttl)
-        freeQueue((ElementQueue*)entry->value);
+        if (entry != NULL && entry->value != NULL)
+        {
+            freeQueue((ElementQueue*)entry->value);
+        }
     }
     hashmap__free(lawn->timeout_queues);
 
@@ -480,10 +483,10 @@ ElementQueue* pop_expired(Lawn* lawn) {
     }
 
 
-    HashMapEntry *entry;
-    ElementQueue* queue;
+    HashMapEntry *entry = NULL;
+    ElementQueue* queue = NULL;
     ElementQueueNode* next_node = NULL;
-    int bkt;
+    int bkt = 0;
     hashmap__for_each_entry(lawn->timeout_queues, entry, bkt) {
         queue = (ElementQueue*)entry->value;
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {

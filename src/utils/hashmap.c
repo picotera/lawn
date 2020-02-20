@@ -166,7 +166,6 @@ int hashmap__insert(struct hashmap *map, const void *key, void *value,
 
 	size_t hashed_key = map->hash_fn(key, map->ctx);
 	h = hash_bits(hashed_key, map->cap_bits);
-	printf("in insert: %ld (%ld)-> %ld\n", hashed_key, map->cap_bits, h);
 	if (strategy != HASHMAP_APPEND &&
 	    hashmap_find_entry(map, key, h, NULL, &entry)) {
 		if (old_key)

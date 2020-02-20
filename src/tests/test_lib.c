@@ -242,6 +242,7 @@ int test_pop_expired() {
   
   mstime_t ttl_ms4 = 4000;
   char* key4 = "pop_next_test_key_4";
+
   if ((set_element_ttl(store, key1, strlen(key1), ttl_ms1) != LAWN_ERR) &&
       (set_element_ttl(store, key2, strlen(key2), ttl_ms2) != LAWN_ERR) &&
       (set_element_ttl(store, key3, strlen(key3), ttl_ms3) != LAWN_ERR) &&
