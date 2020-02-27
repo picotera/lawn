@@ -40,8 +40,9 @@ typedef struct element_queue_node{
     size_t element_len;
     mstime_t ttl_queue;
     mstime_t expiration;
-    struct element_queue_node* next;
-    struct element_queue_node* prev;
+    TAILQ_ENTRY(element_queue_node) tqe;
+    // struct element_queue_node* next;
+    // struct element_queue_node* prev;
 } ElementQueueNode;
 
 typedef struct element_queue{
@@ -128,7 +129,7 @@ ElementQueueNode* pop_next(Lawn* dehy);
 /*
  * @return a queue of all exired element nodes.
  */
-ElementQueue* pop_expired(Lawn* dehy);
+ElementQueueNode* pop_expired(Lawn* dehy);
 
 
 
@@ -138,11 +139,11 @@ ElementQueue* pop_expired(Lawn* dehy);
  * 
  **********************/
 
-void freeQueue(ElementQueue* queue);
+void freeQueue(ElementQueueNode* queuehead);
 
-void queuePush(ElementQueue* queue, ElementQueueNode* node);
+void queuePush(ElementQueueNode* queuehead, ElementQueueNode* node);
 
-ElementQueueNode* queuePop(ElementQueue* queue);
+ElementQueueNode* queuePop(ElementQueueNode* queuehead);
 
 
 
