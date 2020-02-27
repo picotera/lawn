@@ -167,7 +167,7 @@ void freeQueue(ElementQueue* queue) {
 
     ElementQueueNode* current = queue->head;
 
-    // iterate over queue and find the element that has id = element_id
+    // iterate over queue and remove all
     while(current != NULL)
     {
         ElementQueueNode* next = current->next; // save next
