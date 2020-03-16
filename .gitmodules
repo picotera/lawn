@@ -1,0 +1,6 @@
+[submodule "src/src/timerwheel"]
+	path = src/src/timerwheel
+	url = https://github.com/wahern/timeout.git
+[submodule "src/timerwheel"]
+	path = src/timerwheel
+	url = https://github.com/wahern/timeout.git
