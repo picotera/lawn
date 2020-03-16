@@ -21,4 +21,3 @@
 style.c
 
 src/dep/snowball/libstemmer/mkinc.mak
-src/timerwheel/*
