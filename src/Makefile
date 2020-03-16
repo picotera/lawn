@@ -96,7 +96,7 @@ clean:
 	$(MAKE) -C tests clean
 
 distclean:
-	find . -type f \( -name '*.[oad]' -o -name '*.so' \) -delete -print
+	find . -type f \( -name '*.[oad]' -o -name '*.so' \) -print | grep -v timerwheel | rm -f
 
 package: lawn.so
 	mkdir -p ../build
