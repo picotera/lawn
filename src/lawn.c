@@ -1,7 +1,7 @@
 /* ###################################################################
  *  Lawn - Low Latancy Timer Data-Structure for Large Scale Systems 
  *
- *  Autor: Adam Lev-Libfeld (adam@tamarlabs.com) 2017-2020
+ *  Autor: Adam Lev-Libfeld (adam@tamarlabs.com) 2017-2025
  *
  *  TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with 
  *  unlimited timer span with no degrigation in performance over a large set of timers.
