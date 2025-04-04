@@ -4,14 +4,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from typing import List, Tuple, Callable, Generator, Dict
-from timer_wheel import TimerWheel
-from lawn_timer import Lawn
+from src.python.timer_wheel import TimerWheel
+from src.python.lawn import Lawn
 import argparse
 from tqdm import tqdm
 import psutil
 import os
 import gc
 import subprocess
+import csv
 
 BATCH_SIZE = 1000000
 
@@ -42,12 +43,12 @@ def benchmark_insertion(num_timers: int, pbar: tqdm) -> Tuple[List[float], List[
         num_runs: Number of benchmark runs
         
     Returns:
-        Tuple of lists containing insertion times for TimerWheel and Lawn Timer
+        Tuple of lists containing insertion times for TimerWheel and Lawn
     """
     
     # TimerWheel benchmark
     wheel_times = list(benchmark_insertion_for_specific_ds(TimerWheel(), num_timers, pbar))
-    # Lawn Timer benchmark
+    # Lawn benchmark
     lawn_times = list(benchmark_insertion_for_specific_ds(Lawn(), num_timers, pbar))
 
     return wheel_times, lawn_times
@@ -78,13 +79,13 @@ def benchmark_deletion(num_timers: int, pbar: tqdm) -> Tuple[List[float], List[f
         num_runs: Number of benchmark runs
         
     Returns:
-        Tuple of lists containing deletion times for TimerWheel and Lawn Timer
+        Tuple of lists containing deletion times for TimerWheel and Lawn
     """
     
     # TimerWheel benchmark
     wheel_times = list(benchmark_deletion_for_specific_ds(TimerWheel(), num_timers, pbar))
 
-    # Lawn Timer benchmark
+    # Lawn benchmark
     lawn_times = list(benchmark_deletion_for_specific_ds(Lawn(), num_timers, pbar))
 
     return wheel_times, lawn_times
@@ -111,11 +112,11 @@ def benchmark_tick(num_timers: int, pbar: tqdm) -> Tuple[List[float], List[float
         num_runs: Number of benchmark runs
         
     Returns:
-        Tuple of lists containing tick processing times for TimerWheel and Lawn Timer
+        Tuple of lists containing tick processing times for TimerWheel and Lawn
     """
 
 
-    # Lawn Timer benchmark
+    # Lawn benchmark
     lawn_times = list(benchmark_tick_for_specific_ds(Lawn(), num_timers, pbar))
 
     # TimerWheel benchmark
@@ -128,7 +129,7 @@ def plot_results(results: pd.DataFrame, title: str, ylabel: str):
     """Plot benchmark results."""
     plt.figure(figsize=(10, 6))
     plt.plot(results['num_timers'], results['wheel_mean'], 'b-', label='TimerWheel')
-    plt.plot(results['num_timers'], results['lawn_mean'], 'r-', label='Lawn Timer')
+    plt.plot(results['num_timers'], results['lawn_mean'], 'r-', label='Lawn')
     plt.fill_between(results['num_timers'],
                      results['wheel_mean'] - results['wheel_std'],
                      results['wheel_mean'] + results['wheel_std'],
@@ -145,7 +146,7 @@ def plot_results(results: pd.DataFrame, title: str, ylabel: str):
     plt.savefig(f'benchmark_{title.lower().replace(" ", "_")}.png')
     plt.close()
 
-def run_benchmarks(benchmark_function: Callable, num_timers_list: List[int], benchmark_name: str, num_runs: int = 5) -> None:
+def run_benchmarks(benchmark_function: Callable, num_timers_list: List[int], benchmark_name: str, num_runs: int = 5) -> pd.DataFrame:
     """Run benchmarks and plot results."""
     results = {
         'num_timers': [],
@@ -176,6 +177,7 @@ def run_benchmarks(benchmark_function: Callable, num_timers_list: List[int], ben
         
     df = pd.DataFrame(results)
     plot_results(df, f'{benchmark_name} Performance', 'Time (seconds)')
+    return df
 
 def measure_memory_usage(data_structure: object, num_timers: int) -> Tuple[float, float]:
     """
@@ -200,7 +202,7 @@ def measure_memory_usage(data_structure: object, num_timers: int) -> Tuple[float
     
     return initial_memory, final_memory
 
-def benchmark_memory_usage(num_timers_list: List[int], num_runs: int = 5) -> None:
+def benchmark_memory_usage(num_timers_list: List[int], num_runs: int = 5) -> pd.DataFrame:
     """Benchmark memory usage for both implementations."""
     results = {
         'num_timers': [],
@@ -224,7 +226,7 @@ def benchmark_memory_usage(num_timers_list: List[int], num_runs: int = 5) -> Non
             wheel_initial.append(init_mem)
             wheel_final.append(final_mem)
             
-            # Lawn Timer
+            # Lawn
             lawn = Lawn()
             init_mem, final_mem = measure_memory_usage(lawn, num_timers)
             lawn_initial.append(init_mem)
@@ -238,6 +240,7 @@ def benchmark_memory_usage(num_timers_list: List[int], num_runs: int = 5) -> Non
     
     df = pd.DataFrame(results)
     plot_memory_results(df)
+    return df
 
 def plot_memory_results(results: pd.DataFrame):
     """Plot memory usage results."""
@@ -245,7 +248,7 @@ def plot_memory_results(results: pd.DataFrame):
     plt.plot(results['num_timers'], results['wheel_final_mem'] - results['wheel_initial_mem'], 
              'b-', label='TimerWheel Memory Usage')
     plt.plot(results['num_timers'], results['lawn_final_mem'] - results['lawn_initial_mem'], 
-             'r-', label='Lawn Timer Memory Usage')
+             'r-', label='Lawn Memory Usage')
     plt.title('Memory Usage Comparison')
     plt.xlabel('Number of Timers')
     plt.ylabel('Memory Usage (MB)')
@@ -263,7 +266,7 @@ def benchmark_workload_patterns(num_timers: int, pattern: str = 'fixed') -> Tupl
         pattern: Workload pattern ('fixed', 'mixed', 'burst', 'uniform')
         
     Returns:
-        Tuple of lists containing processing times for TimerWheel and Lawn Timer
+        Tuple of lists containing processing times for TimerWheel and Lawn
     """
     def generate_ttl_pattern(pattern: str) -> Callable:
         if pattern == 'fixed':
@@ -290,7 +293,7 @@ def benchmark_concurrent_access(num_timers: int, num_threads: int = 4) -> Tuple[
         num_threads: Number of concurrent threads
         
     Returns:
-        Tuple of lists containing processing times for TimerWheel and Lawn Timer
+        Tuple of lists containing processing times for TimerWheel and Lawn
     """
     import threading
     
@@ -312,7 +315,7 @@ def benchmark_concurrent_access(num_timers: int, num_threads: int = 4) -> Tuple[
         t.join()
     wheel_times.extend(wheel_results)
     
-    # Lawn Timer benchmark
+    # Lawn benchmark
     lawn = Lawn()
     threads = []
     lawn_results = []
@@ -358,7 +361,7 @@ def measure_cache_behavior(data_structure: object, num_timers: int) -> Dict[str,
     
     return cache_metrics
 
-def benchmark_cache_behavior(num_timers_list: List[int]) -> None:
+def benchmark_cache_behavior(num_timers_list: List[int]) -> pd.DataFrame:
     """Benchmark cache behavior for both implementations."""
     results = {
         'num_timers': [],
@@ -379,7 +382,7 @@ def benchmark_cache_behavior(num_timers_list: List[int]) -> None:
             wheel_llc_hit_rate = 1 - (wheel_metrics['LLC_misses'] / wheel_metrics['LLC_loads']) if wheel_metrics['LLC_loads'] > 0 else 0
             pbar.update(1)
             
-            # Lawn Timer
+            # Lawn
             lawn = Lawn()
             lawn_metrics = measure_cache_behavior(lawn, num_timers)
             lawn_l1_hit_rate = 1 - (lawn_metrics['L1_dcache_misses'] / lawn_metrics['L1_dcache_loads']) if lawn_metrics['L1_dcache_loads'] > 0 else 0
@@ -394,6 +397,7 @@ def benchmark_cache_behavior(num_timers_list: List[int]) -> None:
     
     df = pd.DataFrame(results)
     plot_cache_results(df)
+    return df
 
 def plot_cache_results(results: pd.DataFrame):
     """Plot cache behavior results."""
@@ -401,7 +405,7 @@ def plot_cache_results(results: pd.DataFrame):
     
     plt.subplot(1, 2, 1)
     plt.plot(results['num_timers'], results['wheel_l1_hit_rate'], 'b-', label='TimerWheel L1')
-    plt.plot(results['num_timers'], results['lawn_l1_hit_rate'], 'r-', label='Lawn Timer L1')
+    plt.plot(results['num_timers'], results['lawn_l1_hit_rate'], 'r-', label='Lawn L1')
     plt.title('L1 Cache Hit Rate')
     plt.xlabel('Number of Timers')
     plt.ylabel('Hit Rate')
@@ -410,7 +414,7 @@ def plot_cache_results(results: pd.DataFrame):
     
     plt.subplot(1, 2, 2)
     plt.plot(results['num_timers'], results['wheel_llc_hit_rate'], 'b-', label='TimerWheel LLC')
-    plt.plot(results['num_timers'], results['lawn_llc_hit_rate'], 'r-', label='Lawn Timer LLC')
+    plt.plot(results['num_timers'], results['lawn_llc_hit_rate'], 'r-', label='Lawn LLC')
     plt.title('LLC Cache Hit Rate')
     plt.xlabel('Number of Timers')
     plt.ylabel('Hit Rate')
@@ -430,7 +434,7 @@ def benchmark_numa_awareness(num_timers: int, num_nodes: int = 2) -> Tuple[List[
         num_nodes: Number of NUMA nodes to test
         
     Returns:
-        Tuple of lists containing processing times for TimerWheel and Lawn Timer
+        Tuple of lists containing processing times for TimerWheel and Lawn
     """
     def run_on_node(node: int, data_structure: object, num_timers: int) -> float:
         try:
@@ -453,7 +457,7 @@ def benchmark_numa_awareness(num_timers: int, num_nodes: int = 2) -> Tuple[List[
             wheel_times.append(wheel_time)
             pbar.update(1)
             
-            # Lawn Timer
+            # Lawn
             lawn = Lawn()
             lawn_time = run_on_node(node, lawn, num_timers)
             lawn_times.append(lawn_time)
@@ -534,12 +538,15 @@ def simulate_real_workload(data_structure: object, duration: float = 60.0, pbar:
     
     return metrics
 
-def benchmark_stability(duration: float = 300.0) -> None:
+def benchmark_stability(duration: float = 300.0) -> Dict[str, Dict[str, float]]:
     """
     Run long-term stability test.
     
     Args:
         duration: Duration of the test in seconds
+        
+    Returns:
+        Dictionary containing stability metrics for both implementations
     """
     print(f"Running stability test for {duration} seconds...")
     
@@ -556,13 +563,59 @@ def benchmark_stability(duration: float = 300.0) -> None:
     print(f"Max Latency: {wheel_metrics['max_latency']:.6f}s")
     print(f"Average Latency: {wheel_metrics['avg_latency']:.6f}s")
     
-    print("\nLawn Timer:")
+    print("\nLawn:")
     print(f"Total Operations: {lawn_metrics['insertions'] + lawn_metrics['deletions'] + lawn_metrics['ticks']}")
     print(f"Insertions: {lawn_metrics['insertions']}")
     print(f"Deletions: {lawn_metrics['deletions']}")
     print(f"Ticks: {lawn_metrics['ticks']}")
     print(f"Max Latency: {lawn_metrics['max_latency']:.6f}s")
     print(f"Average Latency: {lawn_metrics['avg_latency']:.6f}s")
+    
+    return {
+        'wheel': wheel_metrics,
+        'lawn': lawn_metrics
+    }
+
+def export_to_csv(all_results: Dict[str, pd.DataFrame], filename: str) -> None:
+    """
+    Export all benchmark results to a CSV file.
+    
+    Args:
+        all_results: Dictionary containing all benchmark results
+        filename: Output CSV filename
+    """
+    # Create a writer object
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        
+        # Write header
+        writer.writerow(['Benchmark Type', 'Metric', 'Value'])
+        
+        # Process each benchmark type
+        for benchmark_type, data in all_results.items():
+            if isinstance(data, pd.DataFrame):
+                # For DataFrame results (insertion, deletion, tick, memory, cache)
+                for _, row in data.iterrows():
+                    for col in data.columns:
+                        if col != 'num_timers':  # Skip the num_timers column
+                            writer.writerow([benchmark_type, f"{col}_{row['num_timers']}", row[col]])
+            elif isinstance(data, dict):
+                if benchmark_type == 'workload':
+                    # For workload patterns
+                    for pattern, metrics in data.items():
+                        for metric, value in metrics.items():
+                            writer.writerow([benchmark_type, f"{pattern}_{metric}", value])
+                elif benchmark_type == 'stability':
+                    # For stability test
+                    for impl, metrics in data.items():
+                        for metric, value in metrics.items():
+                            writer.writerow([benchmark_type, f"{impl}_{metric}", value])
+                else:
+                    # For other dictionary results (concurrent, numa)
+                    for metric, value in data.items():
+                        writer.writerow([benchmark_type, metric, value])
+    
+    print(f"Benchmark data exported to {filename}")
 
 def main():
     """Run selected benchmarks and generate plots."""
@@ -577,6 +630,7 @@ def main():
     parser.add_argument('--numa', action='store_true', help='Run NUMA awareness benchmarks')
     parser.add_argument('--stability', action='store_true', help='Run stability test')
     parser.add_argument('--duration', type=float, default=3600.0, help='Duration of stability test in seconds')
+    parser.add_argument('--export-csv', type=str, help='Export all benchmark data to CSV file')
     
     args = parser.parse_args()
 
@@ -595,45 +649,88 @@ def main():
 
     num_timers_list = [100, 1000, 10000, 100000, 1000000]
     
+    # Dictionary to store all benchmark results for CSV export
+    all_results = {}
+    
     if args.insertion:
-        run_benchmarks(benchmark_insertion, num_timers_list, 'insertion')
+        results = run_benchmarks(benchmark_insertion, num_timers_list, 'insertion')
+        if args.export_csv:
+            all_results['insertion'] = results
 
     if args.deletion:
-        run_benchmarks(benchmark_deletion, num_timers_list, 'deletion')
+        results = run_benchmarks(benchmark_deletion, num_timers_list, 'deletion')
+        if args.export_csv:
+            all_results['deletion'] = results
 
     if args.tick:
-        run_benchmarks(benchmark_tick, num_timers_list, 'tick')
+        results = run_benchmarks(benchmark_tick, num_timers_list, 'tick')
+        if args.export_csv:
+            all_results['tick'] = results
         
     if args.memory:
-        benchmark_memory_usage(num_timers_list)
+        results = benchmark_memory_usage(num_timers_list)
+        if args.export_csv:
+            all_results['memory'] = results
         
     if args.workload:
         patterns = ['fixed', 'mixed', 'burst', 'uniform']
+        workload_results = {}
         for pattern in patterns:
             print(f"\nRunning {pattern} workload pattern benchmarks...")
             wheel_times, lawn_times = benchmark_workload_patterns(100000, pattern)
             print(f"TimerWheel {pattern} pattern: {np.mean(wheel_times):.6f}s")
-            print(f"Lawn Timer {pattern} pattern: {np.mean(lawn_times):.6f}s")
+            print(f"Lawn {pattern} pattern: {np.mean(lawn_times):.6f}s")
+            workload_results[pattern] = {
+                'wheel_mean': np.mean(wheel_times),
+                'wheel_std': np.std(wheel_times),
+                'lawn_mean': np.mean(lawn_times),
+                'lawn_std': np.std(lawn_times)
+            }
+        if args.export_csv:
+            all_results['workload'] = workload_results
             
     if args.concurrent:
         print("\nRunning concurrent access benchmarks...")
         wheel_times, lawn_times = benchmark_concurrent_access(100000)
         print(f"TimerWheel concurrent: {np.mean(wheel_times):.6f}s")
-        print(f"Lawn Timer concurrent: {np.mean(lawn_times):.6f}s")
+        print(f"Lawn concurrent: {np.mean(lawn_times):.6f}s")
+        if args.export_csv:
+            all_results['concurrent'] = {
+                'wheel_mean': np.mean(wheel_times),
+                'wheel_std': np.std(wheel_times),
+                'lawn_mean': np.mean(lawn_times),
+                'lawn_std': np.std(lawn_times)
+            }
 
     if args.cache:
-        benchmark_cache_behavior(num_timers_list)
+        results = benchmark_cache_behavior(num_timers_list)
+        if args.export_csv:
+            all_results['cache'] = results
         
     if args.numa:
         print("\nRunning NUMA awareness benchmarks...")
         wheel_times, lawn_times = benchmark_numa_awareness(100000)
         print(f"TimerWheel NUMA performance: {np.mean(wheel_times):.6f}s")
-        print(f"Lawn Timer NUMA performance: {np.mean(lawn_times):.6f}s")
+        print(f"Lawn NUMA performance: {np.mean(lawn_times):.6f}s")
+        if args.export_csv:
+            all_results['numa'] = {
+                'wheel_mean': np.mean(wheel_times),
+                'wheel_std': np.std(wheel_times),
+                'lawn_mean': np.mean(lawn_times),
+                'lawn_std': np.std(lawn_times)
+            }
         
     if args.stability:
-        benchmark_stability(args.duration)
+        results = benchmark_stability(args.duration)
+        if args.export_csv:
+            all_results['stability'] = results
 
     print("Benchmarks completed. Results saved as PNG files.")
+    
+    # Export all results to CSV if requested
+    if args.export_csv and all_results:
+        export_to_csv(all_results, args.export_csv)
+        print(f"All benchmark data exported to {args.export_csv}")
 
 if __name__ == "__main__":
     main() 

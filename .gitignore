@@ -17,7 +17,9 @@
 !**/*.cls
 !**/*.json
 !**/*.txt
+
 /site
 style.c
-
+**/.vscode
+**/venv
 src/dep/snowball/libstemmer/mkinc.mak
