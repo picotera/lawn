@@ -647,7 +647,7 @@ def main():
         args.numa = True
         args.stability = True
 
-    num_timers_list = [100, 1000, 10000, 100000, 1000000]
+    num_timers_list = [100, 1000, 10000, 100000, 1000000, 10000000]
     
     # Dictionary to store all benchmark results for CSV export
     all_results = {}
