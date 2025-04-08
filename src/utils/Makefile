@@ -10,9 +10,12 @@ CC_OBJECTS = $(patsubst $(SOURCEDIR)/%.c, $(SOURCEDIR)/%.o, $(CC_SOURCES))
 
 .SUFFIXES: .c .cc .o
 
-all: millisecond_time.a
+all: millisecond_time.a hash_funcs.a
 
 millisecond_time.a: $(CC_OBJECTS)
+	ar rcs $@ $^
+
+hash_funcs.a: $(CC_OBJECTS)
 	ar rcs $@ $^
 
 clean:

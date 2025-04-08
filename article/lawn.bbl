@@ -34,15 +34,24 @@ G.~Varghese and T.~Lauck, ``Hashed and hierarchical timing wheels: Data
   structures for the efficient implementation of a timer facility,'' {\em
   SIGOPS Oper. Syst. Rev.}, vol.~21, pp.~25--38, Nov. 1987.
 
-\bibitem{TWI}
-N.~Welch, ``timeout.c: Tickless hierarchical timing wheel implementation.''
-  \url{http://25thandclement.com/~william/projects/timeout.c.html}.
-
 \bibitem{largescale}
 H.~Hu, ``Large-scale timer management.'' US Patent no. US8307030B1.
 
 \bibitem{autoscale}
 Z.~ZhouIvan, ``On-demand scalable timer wheel.'' US Patent no. US20140298073A1.
+
+\bibitem{smartpq}
+C.~Giannoula, F.~Strati, D.~Siakavaras, G.~Goumas, and N.~Koziris, ``Smartpq:
+  An adaptive concurrent priority queue for numa architectures,'' 2024.
+
+\bibitem{numasched}
+A.~Drebes, A.~Pop, K.~Heydemann, N.~Drach, and A.~Cohen, ``Numa-aware
+  scheduling and memory allocation for data-flow task-parallel applications,''
+  {\em SIGPLAN Not.}, vol.~51, Feb. 2016.
+
+\bibitem{TWI}
+N.~Welch, ``timeout.c: Tickless hierarchical timing wheel implementation.''
+  \url{http://25thandclement.com/~william/projects/timeout.c.html}.
 
 \bibitem{VUSR}
 A.~M. Adam~Matan, Adam Lev-Libfeld, ``Vioozer geo-tagging system.''
@@ -60,6 +69,7 @@ A.~Lev-Libfeld, ``A redis element dehydration module.''
   \url{www.tamarlabs.com/ReDe/}, 2017.
 
 \bibitem{MLNX}
-Y.~Ittigin et.al., ``Unified Communication X''
-\url{https://github.com/openucx/ucx/tree/master/src/ucs/time}, 2017.
+``Unified communication x.''
+  \url{https://github.com/openucx/ucx/tree/master/src/ucs/time}, 2018.
+
 \end{thebibliography}

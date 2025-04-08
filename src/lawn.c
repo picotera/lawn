@@ -28,7 +28,7 @@
 #include <math.h>
 #include "lawn.h"
 // #include "utils/millisecond_time.h"
-
+#include "utils/hash_funcs.h"
 
 /***************************
  *    Hashmap Utilities
@@ -38,37 +38,28 @@
 
 size_t ttl_hash_fn(const void *k, void *ctx)
 {
+    (void)ctx; // Silence unused parameter warning
     return (size_t)k;
 }
 
 bool ttl_equal_fn(const void *a, const void *b, void *ctx)
 {
+    (void)ctx; // Silence unused parameter warning
     return (size_t)a == (size_t)b;
 }
 
 
 // elements
 
-// based on djb2. see: http://www.cse.yorku.ca/~oz/hash.html
-unsigned long string_hash(char *str)
-{
-    unsigned long hash = 5381;
-    int c;
-
-    while (c = *str++)
-    {
-        hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
-    }
-    return hash;
-}
-
 size_t elem_hash_fn(const void *k, void *ctx)
 {
+    (void)ctx; // Silence unused parameter warning
     return string_hash((char*)k);
 }
 
 bool elem_equal_fn(const void *a, const void *b, void *ctx)
 {
+    (void)ctx; // Silence unused parameter warning
     return (strcmp((char* )a, (char* )b) == 0);
 }
 
@@ -335,7 +326,7 @@ void freeLawn(Lawn* lawn)
     hashmap__free(lawn->element_nodes);
 
     HashMapEntry *entry, *tmp;
-    int bkt;
+    size_t bkt;
     hashmap__for_each_entry_safe(lawn->timeout_queues, entry, tmp, bkt) {
         // do we need this instead? _removeQueueFromMapping(lawn, queue_ttl)
         if (entry != NULL && entry->value != NULL)
@@ -426,7 +417,7 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
     mstime_t head_node_exp;
     ElementQueue* queue;
     ElementQueueNode* next_node = NULL;
-    int bkt;
+    size_t bkt;
     hashmap__for_each_entry(lawn->timeout_queues, entry, bkt) {
         queue = (ElementQueue*)entry->value;
         if (queue != NULL && queue->len > 0 && queue->head != NULL) {
@@ -486,8 +477,7 @@ ElementQueue* pop_expired(Lawn* lawn) {
 
     HashMapEntry *entry = NULL;
     ElementQueue* queue = NULL;
-    ElementQueueNode* next_node = NULL;
-    int bkt = 0;
+    size_t bkt = 0;
     hashmap__for_each_entry(lawn->timeout_queues, entry, bkt) {
         queue = (ElementQueue*)entry->value;
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {

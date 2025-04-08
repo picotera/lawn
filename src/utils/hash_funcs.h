@@ -1,0 +1,1 @@
+unsigned long string_hash(char *str);

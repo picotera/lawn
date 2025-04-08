@@ -17,6 +17,7 @@
 !**/*.cls
 !**/*.json
 !**/*.txt
+!**/*.png
 
 /site
 style.c

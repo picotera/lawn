@@ -1,4 +1,3 @@
-
 # find the OS
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 
@@ -13,7 +12,7 @@ endif
 
 # Default CFLAGS
 CFLAGS= -Wall -Wno-unused-function -Wno-unused-variable -Wno-unused-result -fPIC \
- 	-D_GNU_SOURCE -std=gnu99 -I"$(shell pwd)" 
+ 	-D_GNU_SOURCE -std=gnu99 -I"$(shell pwd)" -I"$(shell pwd)/timerwheel"
 CFLAGS += $(DEBUGFLAGS)
 
 # Compile flags for linux / osx
@@ -25,13 +24,13 @@ else
 endif
 export CFLAGS
 
-
-
 # Sources
 SOURCEDIR=$(shell pwd -P)
 CC_SOURCES = $(wildcard $(SOURCEDIR)/*.c)
 CC_SOURCES += $(wildcard $(SOURCEDIR)/utils/*.c)
 CC_SOURCES += $(wildcard $(SOURCEDIR)/trie/*.c)
+CC_SOURCES += $(wildcard $(SOURCEDIR)/timerwheel/*.c)
+CC_SOURCES += $(wildcard $(SOURCEDIR)/benchmarks/*.c)
 
 # Convert all sources to .o files
 CC_OBJECTS = $(patsubst %.c, %.o, $(CC_SOURCES) )
@@ -51,10 +50,9 @@ ALLDEPS=$(CC_OBJECTS) $(LIBS)
 
 # Compile C file while generating a .d file for it
 %.o: %.c
-%.o: %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c $< -o $@ -MMD -MF $(@:.o=.d)
 
-all: lawn.so
+all: lawn.so benchmarks/lawn_timerstore_test benchmarks/timerwheel_timerstore_test
 
 # Include all dependency files for C files
 -include $(CC_DEPS)
@@ -63,7 +61,6 @@ all: lawn.so
 $(LIBTRIEMAP):
 	$(MAKE) -C trie 
 .PHONY: $(LIBTRIEMAP)
-
 
 build_tests: lawn.so 
 	$(MAKE) -C tests build
@@ -83,6 +80,14 @@ lawn.so: $(ALLDEPS)
 	rm -f lawn.so
 	$(LD) -o $@ $(ALLDEPS) $(SHOBJ_LDFLAGS) -lc -lm 
 
+# Build the Lawn-based TimerStore test
+lawn_timerstore_test: lawn.o lawn_timerstore.o utils/millisecond_time.o utils/hashmap.o
+	$(CC) $(CFLAGS) -o $@ $^ -lc -lm
+
+# Build the Timer Wheel-based TimerStore test
+timerwheel_timerstore_test: timerwheel_timerstore.o timerwheel/timeout.o utils/millisecond_time.o utils/hashmap.o
+	$(CC) $(CFLAGS) -o $@ $^ -lc -lm
+
 # Build a stand-alone static library without the module entry point.
 # This is used to include the module's functionality in other modules
 lawn.a: CFLAGS+=-DRS_CMD_PREFIX='"_FT"' -DRS_STATIC
@@ -92,7 +97,7 @@ lawn.a: $(CC_OBJECTS) $(LIBS) # version.h
 staticlib: lawn.a
 
 clean:
-	rm -fv *.[oad] utils/*.[oad] trie/*.[oad] tests/*.[oad] tests/*.run 
+	rm -fv *.[oad] utils/*.[oad] trie/*.[oad] tests/*.[oad] tests/*.run benchmarks/*.[oad] benchmarks/*.run
 	$(MAKE) -C tests clean
 
 distclean:

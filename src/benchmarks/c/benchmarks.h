@@ -4,8 +4,15 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <time.h>
-#include "../lawn.h"
-#include "../timerwheel/timeout.h"
+#include "lawn_timerstore.h"
+#include "timerwheel_timerstore.h"
+
+// Function pointer types for timer store operations
+typedef int (*timer_init_func)(void);
+typedef int (*timer_cleanup_func)(void);
+typedef int (*timer_start_func)(mstime_t, char*, void*);
+typedef int (*timer_stop_func)(char*);
+typedef int (*timer_tick_func)(void);
 
 // Benchmark result structure
 typedef struct {
@@ -26,6 +33,56 @@ typedef struct {
 
 // Initialize default benchmark configuration
 BenchmarkConfig benchmark_config_default(void);
+
+// Generic benchmark functions
+BenchmarkResult benchmark_insertion_generic(
+    BenchmarkConfig config,
+    timer_init_func init_func,
+    timer_cleanup_func cleanup_func,
+    timer_start_func start_timer_func
+);
+
+BenchmarkResult benchmark_deletion_generic(
+    BenchmarkConfig config,
+    timer_init_func init_func,
+    timer_cleanup_func cleanup_func,
+    timer_start_func start_timer_func,
+    timer_stop_func stop_timer_func
+);
+
+BenchmarkResult benchmark_tick_generic(
+    BenchmarkConfig config,
+    timer_init_func init_func,
+    timer_cleanup_func cleanup_func,
+    timer_start_func start_timer_func,
+    timer_tick_func per_tick_func
+);
+
+BenchmarkResult benchmark_memory_generic(
+    BenchmarkConfig config,
+    timer_init_func init_func,
+    timer_cleanup_func cleanup_func,
+    timer_start_func start_timer_func
+);
+
+BenchmarkResult benchmark_workload_pattern_generic(
+    BenchmarkConfig config,
+    const char* pattern,
+    timer_init_func init_func,
+    timer_cleanup_func cleanup_func,
+    timer_start_func start_timer_func,
+    timer_tick_func per_tick_func
+);
+
+BenchmarkResult benchmark_stability_generic(
+    BenchmarkConfig config,
+    double duration_seconds,
+    timer_init_func init_func,
+    timer_cleanup_func cleanup_func,
+    timer_start_func start_timer_func,
+    timer_stop_func stop_timer_func,
+    timer_tick_func per_tick_func
+);
 
 // Run insertion benchmark
 BenchmarkResult benchmark_insertion_lawn(BenchmarkConfig config);
@@ -58,7 +115,6 @@ void print_benchmark_result(const char* name, BenchmarkResult result);
 void save_benchmark_results(const char* filename, BenchmarkResult lawn_result, BenchmarkResult timerwheel_result);
 
 // Helper functions
-uint64_t get_current_time_ms(void);
 void sleep_ms(uint64_t ms);
 size_t get_memory_usage(void);
 

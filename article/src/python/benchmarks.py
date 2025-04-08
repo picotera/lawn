@@ -4,8 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 from typing import List, Tuple, Callable, Generator, Dict
-from src.python.timer_wheel import TimerWheel
-from src.python.lawn import Lawn
+from python.timer_wheel import TimerWheel
+from src.lawn import Lawn
 import argparse
 from tqdm import tqdm
 import psutil
@@ -151,8 +151,10 @@ def run_benchmarks(benchmark_function: Callable, num_timers_list: List[int], ben
     results = {
         'num_timers': [],
         'wheel_mean': [],
+        'wheel_95': [],
         'wheel_std': [],
         'lawn_mean': [],
+        'lawn_95': [],
         'lawn_std': []
     }
     
@@ -171,8 +173,10 @@ def run_benchmarks(benchmark_function: Callable, num_timers_list: List[int], ben
             
             results['num_timers'].append(num_timers)
             results['wheel_mean'].append(np.mean(wheel_times))
+            results['wheel_95'].append(np.percentile(wheel_times, 0.95))
             results['wheel_std'].append(np.std(wheel_times))
             results['lawn_mean'].append(np.mean(lawn_times))
+            results['lawn_95'].append(np.percentile(lawn_times, 0.95))
             results['lawn_std'].append(np.std(lawn_times))
         
     df = pd.DataFrame(results)
@@ -647,7 +651,7 @@ def main():
         args.numa = True
         args.stability = True
 
-    num_timers_list = [100, 1000, 10000, 100000, 1000000, 10000000]
+    num_timers_list = [100, 1000, 10000, 100000, 1000000]#, 10000000]
     
     # Dictionary to store all benchmark results for CSV export
     all_results = {}

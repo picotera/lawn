@@ -19,14 +19,14 @@
 #ifndef TIMERSTORE_H
 #define TIMERSTORE_H
 
-#include "utils/millisecond_time.h"
+#include "../../utils/millisecond_time.h"
 
 #define TIMERSTORE_OK 0
 #define TIMERSTORE_ERR 1
 
 /**
  * The client calls this routine to start a timer that will 
- * expire after “Interval” units of time. 
+ * expire after "Interval" units of time. 
  * The client supplies a RequestId which is used to distinguish this timer 
  * from other timers that the client has outstanding. Finally, the client 
  * can specify what action must be taken on expiry: for instance, 
