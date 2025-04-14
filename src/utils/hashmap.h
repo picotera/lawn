@@ -136,7 +136,7 @@ bool hashmap__find(const struct hashmap *map, const void *key, void **value);
  * @bkt: integer used as a bucket loop cursor
  */
 #define hashmap__for_each_entry(map, cur, bkt)				    \
-	for (bkt = 0; bkt < map->cap; bkt++)				    \
+	for (bkt = 0; (size_t)bkt < map->cap; bkt++)				    \
 		for (cur = map->buckets[bkt]; cur; cur = cur->next)
 
 /*
@@ -148,7 +148,7 @@ bool hashmap__find(const struct hashmap *map, const void *key, void **value);
  * @bkt: integer used as a bucket loop cursor
  */
 #define hashmap__for_each_entry_safe(map, cur, tmp, bkt)		    \
-	for (bkt = 0; bkt < map->cap; bkt++)				    \
+	for (bkt = 0; (size_t)bkt < map->cap; bkt++)				    \
 		for (cur = map->buckets[bkt];				    \
 		     cur && ({tmp = cur->next; true; });		    \
 		     cur = tmp)

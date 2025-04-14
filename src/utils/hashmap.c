@@ -102,7 +102,7 @@ static int hashmap_grow(struct hashmap *map)
 	struct hashmap_entry *cur, *tmp;
 	size_t new_cap_bits, new_cap;
 	size_t h;
-	size_t bkt;
+	int bkt;
 
 	new_cap_bits = map->cap_bits + 1;
 	if (new_cap_bits < HASHMAP_MIN_CAP_BITS)

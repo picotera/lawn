@@ -189,7 +189,7 @@ void queuePush(ElementQueue* queue, ElementQueueNode* node)
 
 void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
 {
-    if (queue == NULL)
+    if (queue == NULL || node == NULL)
         return;
 
     if (queue->len == 1)
@@ -208,22 +208,42 @@ void _queuePull(Lawn* lawn, ElementQueue* queue, ElementQueueNode* node)
     //hot circuit the node (carefull when pulling from tail or head)
     if ((node == queue->head) || (node->prev == NULL))
     {
-        queue->head = queue->head->next;
-        queue->head->prev = NULL;
+        if (queue->head != NULL && queue->head->next != NULL) {
+            queue->head = queue->head->next;
+            queue->head->prev = NULL;
+        } else {
+            // Handle invalid case where queue->head is NULL or queue->head->next is NULL
+            queue->head = NULL;
+            queue->tail = NULL;
+            if (lawn != NULL) {
+                _removeQueueFromMapping(lawn, node->ttl_queue);
+            }
+            return;
+        }
     }
     else
     {
-        node->prev->next = node->next;
+        if (node->prev != NULL && node->next != NULL) {
+            node->prev->next = node->next;
+        } else if (node->prev != NULL) {
+            node->prev->next = NULL;
+        }
     }
 
     if ((node == queue->tail) || (node->next == NULL))
     {
-        queue->tail = node->prev;
-        queue->tail->next = NULL;
+        if (node->prev != NULL) {
+            queue->tail = node->prev;
+            queue->tail->next = NULL;
+        } else {
+            queue->tail = NULL;
+        }
     }
     else
     {
-        node->next->prev = node->prev;
+        if (node->next != NULL) {
+            node->next->prev = node->prev;
+        }
     }
     queue->len = queue->len - 1;
 }
@@ -251,13 +271,18 @@ ElementQueueNode* _queuePop(Lawn* lawn, ElementQueue* queue)
     }
     else // swap to new head
     {
-        queue->head = queue->head->next;
-        queue->head->prev = NULL;
+        if (queue->head->next != NULL) {
+            queue->head = queue->head->next;
+            if (queue->head != NULL) {
+                queue->head->prev = NULL;
+            }
+        } else {
+            queue->head = NULL;
+        }
     }
 
     queue->len = queue->len - 1;
     return node;
-
 }
 
 
@@ -306,6 +331,8 @@ int _addNodeToMapping(Lawn* lawn, ElementQueueNode* node)
 
 void _removeNode(Lawn* lawn, ElementQueueNode* node)
 {
+    if (lawn == NULL || node == NULL) return;
+    
     ElementQueue* queue = _findQueueInMapping(lawn, node->ttl_queue);
 
     if (queue != NULL)
@@ -326,7 +353,7 @@ void freeLawn(Lawn* lawn)
     hashmap__free(lawn->element_nodes);
 
     HashMapEntry *entry, *tmp;
-    size_t bkt;
+    int bkt;
     hashmap__for_each_entry_safe(lawn->timeout_queues, entry, tmp, bkt) {
         // do we need this instead? _removeQueueFromMapping(lawn, queue_ttl)
         if (entry != NULL && entry->value != NULL)
@@ -402,6 +429,8 @@ mstime_t get_element_exp(Lawn* lawn, char* key){
  */
 int del_element_exp(Lawn* lawn, char* key)
 {
+    if (lawn == NULL || key == NULL) return LAWN_OK;
+    
     ElementQueueNode* node = _findNodeInMapping(lawn, key);
     if (node != NULL){
         _removeNode(lawn, node);
@@ -417,7 +446,7 @@ ElementQueueNode* _get_next_node(Lawn* lawn){
     mstime_t head_node_exp;
     ElementQueue* queue;
     ElementQueueNode* next_node = NULL;
-    size_t bkt;
+    int bkt;
     hashmap__for_each_entry(lawn->timeout_queues, entry, bkt) {
         queue = (ElementQueue*)entry->value;
         if (queue != NULL && queue->len > 0 && queue->head != NULL) {
@@ -474,18 +503,37 @@ ElementQueue* pop_expired(Lawn* lawn) {
             return retval;
     }
 
+    // Create a special reference that elements have already been processed
+    // and should not be freed when the queue itself is freed
+    retval->len = 0; // Start with 0 and increment as we add items
 
     HashMapEntry *entry = NULL;
     ElementQueue* queue = NULL;
-    size_t bkt = 0;
+    int bkt = 0;
     hashmap__for_each_entry(lawn->timeout_queues, entry, bkt) {
         queue = (ElementQueue*)entry->value;
         while (queue != NULL && queue->len > 0 && queue->head != NULL) {
             if (queue->head->expiration <= now)
             {
                 ElementQueueNode* node = _queuePop(lawn, queue);
-                _removeNodeFromMapping(lawn, node);
-                queuePush(retval, node);
+                if (node != NULL) {
+                    _removeNodeFromMapping(lawn, node);
+                    
+                    // The caller should free the node
+                    // Add the node to the return queue without linking to its previous nodes
+                    node->prev = NULL;
+                    node->next = NULL;
+                    
+                    if (retval->head == NULL) {
+                        retval->head = node;
+                        retval->tail = node;
+                    } else {
+                        node->prev = retval->tail;
+                        retval->tail->next = node;
+                        retval->tail = node;
+                    }
+                    retval->len++;
+                }
             }
             else
             {
