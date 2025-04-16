@@ -17,6 +17,35 @@
 #define CLOCK_MONOTONIC 1
 #endif
 
+// Define LAWN_OK and LAWN_ERR if not already defined
+#ifndef LAWN_OK
+#define LAWN_OK 0
+#endif
+
+#ifndef LAWN_ERR
+#define LAWN_ERR 1
+#endif
+
+
+// Define WHEEL_OK and WHEEL_ERR if not already defined
+#ifndef WHEEL_OK
+#define WHEEL_OK 0
+#endif
+
+#ifndef WHEEL_ERR
+#define WHEEL_ERR 1
+#endif
+
+
+
+
+/**
+ * Sleep for the specified number of milliseconds
+ */
+static void sleep_ms(unsigned int ms) {
+    usleep(ms * 1000);
+}
+
 /**
  * Get current time in microseconds
  */
@@ -30,6 +59,15 @@ static uint64_t get_time_us(void) {
  * Get current process memory usage in bytes
  */
 static size_t get_memory_usage(void) {
+    // First, allocate and free a substantial amount of memory
+    // to force memory manager to consolidate fragmented blocks
+    void* buffer = malloc(4 * 1024 * 1024); // 4MB
+    if (buffer) {
+        // Write to memory to ensure it's actually allocated
+        memset(buffer, 1, 4 * 1024 * 1024);
+        free(buffer);
+    }
+    
     struct rusage usage;
     getrusage(RUSAGE_SELF, &usage);
     return usage.ru_maxrss * 1024; // ru_maxrss returns kilobytes
@@ -173,29 +211,48 @@ double benchmark_insertion(datastore_ops_t* ds_ops, benchmark_config_t* config, 
             return 0.0;
         }
         
+        // Initialize all keys to NULL
+        for (size_t i = 0; i < config->num_timers; i++) {
+            keys[i] = NULL;
+        }
+        
+        // Generate keys and TTLs
         for (size_t i = 0; i < config->num_timers; i++) {
             keys[i] = generate_random_key(16); // 16-byte keys
+            if (keys[i] == NULL) continue;
+            
             ttls[i] = generate_ttl_with_pattern(config->workload_pattern, 
-                                                config->min_ttl, 
-                                                config->max_ttl, 
-                                                config->discrete_mode, 
-                                                config->discrete_step);
+                                              config->min_ttl, 
+                                              config->max_ttl, 
+                                              config->discrete_mode, 
+                                              config->discrete_step);
         }
         
         // Perform insertion benchmark
         uint64_t start_time = get_time_us();
+        size_t successful_inserts = 0;
         
         for (size_t i = 0; i < config->num_timers; i++) {
-            ds_ops->add_timer(ds, keys[i], strlen(keys[i]), ttls[i]);
+            if (keys[i] != NULL) {
+                if (ds_ops->add_timer(ds, keys[i], strlen(keys[i]), ttls[i]) == LAWN_OK) {
+                    successful_inserts++;
+                }
+            }
         }
         
         uint64_t end_time = get_time_us();
-        times[iter] = (double)(end_time - start_time) / config->num_timers;
+        
+        // Avoid division by zero
+        successful_inserts = (successful_inserts > 0) ? successful_inserts : 1;
+        times[iter] = (double)(end_time - start_time) / successful_inserts;
         
         // Clean up
         for (size_t i = 0; i < config->num_timers; i++) {
-            ds_ops->remove_timer(ds, keys[i]);
-            free(keys[i]);
+            if (keys[i] != NULL) {
+                ds_ops->remove_timer(ds, keys[i]);
+                free(keys[i]);
+                keys[i] = NULL;
+            }
         }
         
         free(keys);
@@ -249,15 +306,29 @@ double benchmark_deletion(datastore_ops_t* ds_ops, benchmark_config_t* config, d
             return 0.0;
         }
         
+        // Initialize all keys to NULL
+        for (size_t i = 0; i < config->num_timers; i++) {
+            keys[i] = NULL;
+        }
+        
+        // Add timers to datastore
+        size_t actual_timers = 0;
         for (size_t i = 0; i < config->num_timers; i++) {
             keys[i] = generate_random_key(16); // 16-byte keys
+            if (keys[i] == NULL) continue;
+            
             uint64_t ttl = generate_ttl_with_pattern(config->workload_pattern, 
                                                      config->min_ttl, 
                                                      config->max_ttl, 
                                                      config->discrete_mode, 
                                                      config->discrete_step);
-            ds_ops->add_timer(ds, keys[i], strlen(keys[i]), ttl);
+            if (ds_ops->add_timer(ds, keys[i], strlen(keys[i]), ttl) == LAWN_OK) {
+                actual_timers++;
+            }
         }
+        
+        // Adjust if we couldn't add all timers
+        size_t num_timers = (actual_timers > 0) ? actual_timers : 1;
         
         // Shuffle keys for random deletion order
         for (size_t i = 0; i < config->num_timers; i++) {
@@ -271,15 +342,20 @@ double benchmark_deletion(datastore_ops_t* ds_ops, benchmark_config_t* config, d
         uint64_t start_time = get_time_us();
         
         for (size_t i = 0; i < config->num_timers; i++) {
-            ds_ops->remove_timer(ds, keys[i]);
+            if (keys[i] != NULL) {
+                ds_ops->remove_timer(ds, keys[i]);
+            }
         }
         
         uint64_t end_time = get_time_us();
-        times[iter] = (double)(end_time - start_time) / config->num_timers;
+        times[iter] = (double)(end_time - start_time) / num_timers;
         
         // Clean up
         for (size_t i = 0; i < config->num_timers; i++) {
-            free(keys[i]);
+            if (keys[i] != NULL) {
+                free(keys[i]);
+                keys[i] = NULL;
+            }
         }
         
         free(keys);
@@ -331,29 +407,41 @@ double benchmark_tick(datastore_ops_t* ds_ops, benchmark_config_t* config, doubl
             return 0.0;
         }
         
+        // Track how many timers were actually added
+        size_t added_timers = 0;
+        
         // Add timers with short TTLs to ensure they expire during the benchmark
         for (size_t i = 0; i < config->num_timers; i++) {
             char* key = generate_random_key(16);
-            uint64_t ttl = generate_ttl(1, 100); // Short TTLs for quick expiration
-            ds_ops->add_timer(ds, key, strlen(key), ttl);
+            if (key == NULL) continue;
+            
+            // Use consistent TTL ranges for both implementations
+            uint64_t ttl = generate_ttl(100, 1000); // 100ms to 1s TTLs
+            if (ds_ops->add_timer(ds, key, strlen(key), ttl) == LAWN_OK) {
+                added_timers++;
+            }
             free(key);
         }
         
         // Sleep to allow some timers to expire
-        usleep(50000); // 50ms
+        usleep(100000); // 100ms sleep
         
         // Run tick operations until all timers are processed or we reach a limit
-        size_t remaining = config->num_timers;
+        size_t remaining = added_timers;
         size_t tick_count = 0;
+        size_t max_ticks_per_iter = (max_ticks / config->num_iterations > 0) ? 
+                                   (max_ticks / config->num_iterations) : 10;
         
-        while (remaining > 0 && tick_count < max_ticks / config->num_iterations) {
+        while (remaining > 0 && tick_count < max_ticks_per_iter) {
             uint64_t start_time = get_time_us();
             int expired = ds_ops->tick(ds);
             uint64_t end_time = get_time_us();
             
             if (expired > 0) {
-                times[total_ticks++] = end_time - start_time;
-                remaining -= expired;
+                if (total_ticks < max_ticks) {
+                    times[total_ticks++] = end_time - start_time;
+                }
+                remaining = (expired < remaining) ? remaining - expired : 0;
             }
             
             usleep(1000); // 1ms sleep between ticks
@@ -414,33 +502,65 @@ double benchmark_workload_pattern(datastore_ops_t* ds_ops, benchmark_config_t* c
 size_t benchmark_memory(datastore_ops_t* ds_ops, benchmark_config_t* config) {
     if (!ds_ops || !config) return 0;
     
-    // Measure baseline memory usage
-    size_t baseline = get_memory_usage();
+    // Run benchmark multiple times to get more accurate results
+    const int num_runs = config->num_iterations;
+    size_t total_memory = 0;
     
-    // Initialize datastore
-    void* ds = ds_ops->init();
-    if (!ds) return 0;
-    
-    // Add timers
-    for (size_t i = 0; i < config->num_timers; i++) {
-        char* key = generate_random_key(16);
-        uint64_t ttl = generate_ttl_with_pattern(config->workload_pattern, 
-                                                config->min_ttl, 
-                                                config->max_ttl, 
-                                                config->discrete_mode, 
-                                                config->discrete_step);
-        ds_ops->add_timer(ds, key, strlen(key), ttl);
-        free(key);
+    for (int run = 0; run < num_runs; run++) {
+        // Force garbage collection before baseline measurement
+        get_memory_usage();
+        sleep_ms(50); // Allow OS to stabilize memory usage
+        
+        // Measure baseline memory usage
+        size_t baseline = get_memory_usage();
+        
+        // Initialize datastore
+        void* ds = ds_ops->init();
+        if (!ds) continue;
+        
+        // Add timers
+        size_t actual_timers = 0;
+        for (size_t i = 0; i < config->num_timers; i++) {
+            char* key = generate_random_key(16);
+            if (key == NULL) continue;
+            
+            uint64_t ttl = generate_ttl_with_pattern(config->workload_pattern, 
+                                                    config->min_ttl, 
+                                                    config->max_ttl, 
+                                                    config->discrete_mode, 
+                                                    config->discrete_step);
+            if (ds_ops->add_timer(ds, key, strlen(key), ttl) == LAWN_OK) {
+                actual_timers++;
+            }
+            free(key);
+        }
+        
+        // Give the memory system time to stabilize
+        sleep_ms(50);
+        
+        // Query the datastore for its internal memory size first
+        size_t reported_size = ds_ops->size(ds);
+        
+        // Also measure using system metrics
+        size_t memory_after = get_memory_usage();
+        size_t memory_diff = (memory_after > baseline) ? (memory_after - baseline) : 0;
+        
+        // Use the datastore's own size reporting if it's reporting non-zero memory
+        // Otherwise fall back to system memory measurement
+        size_t memory_usage = (reported_size > 0) ? reported_size : memory_diff;
+        total_memory += memory_usage;
+        
+        // Clean up datastore - ensure all timers are properly removed
+        if (ds_ops->destroy) {
+            ds_ops->destroy(ds);
+        }
+        
+        // Force a sleep to allow memory operations to settle
+        sleep_ms(50);
     }
     
-    // Measure memory usage after adding timers
-    size_t memory_after = get_memory_usage();
-    
-    // Clean up datastore
-    ds_ops->destroy(ds);
-    
-    // Return the difference in memory usage
-    return (memory_after > baseline) ? (memory_after - baseline) : 0;
+    // Return the average memory usage
+    return (num_runs > 0) ? (total_memory / num_runs) : 0;
 }
 
 /**

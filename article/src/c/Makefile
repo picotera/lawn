@@ -13,7 +13,7 @@ OBJS = $(SRCS:$(SRC_DIR)/%.c=$(BUILD_DIR)/%.o)
 
 # Lawn and Timer Wheel paths
 LAWN_DIR = ../../../src
-WHEEL_DIR = wheel
+WHEEL_DIR = ../../../src/utils
 
 # Target executable
 TARGET = $(BIN_DIR)/benchmark
@@ -22,7 +22,7 @@ TARGET = $(BIN_DIR)/benchmark
 
 all: $(TARGET)
 
-$(TARGET): $(OBJS) $(BUILD_DIR)/lawn.o $(BUILD_DIR)/timeout.o $(BUILD_DIR)/hashmap.o $(BUILD_DIR)/millisecond_time.o $(BUILD_DIR)/hash_funcs.o
+$(TARGET): $(OBJS) $(BUILD_DIR)/lawn.o $(BUILD_DIR)/timerwheel.o $(BUILD_DIR)/hashmap.o $(BUILD_DIR)/millisecond_time.o $(BUILD_DIR)/hash_funcs.o
 	@mkdir -p $(BIN_DIR)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 	@echo "Build complete: $@"
@@ -35,7 +35,7 @@ $(BUILD_DIR)/lawn.o: $(LAWN_DIR)/lawn.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(LAWN_DIR) -c $< -o $@
 
-$(BUILD_DIR)/timeout.o: $(WHEEL_DIR)/timeout.c
+$(BUILD_DIR)/timerwheel.o: $(WHEEL_DIR)/timerwheel.c
 	@mkdir -p $(BUILD_DIR)
 	$(CC) $(CFLAGS) -I$(WHEEL_DIR) -c $< -o $@
 
@@ -56,6 +56,9 @@ clean:
 	@echo "Clean complete"
 
 # Run the benchmark with default settings
+help: $(TARGET)
+	$(TARGET) --help
+
 run: $(TARGET)
 	$(TARGET)
 

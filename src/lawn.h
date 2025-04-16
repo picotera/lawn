@@ -85,50 +85,55 @@ void freeLawn(Lawn* dehy);
  ************************************/
 
 /*
- * @return the number of uniqe ttl entries in the lawn
+ * @return the number of unique ttl queues in the lawn
  */
-size_t ttl_count(Lawn* dehy);
+size_t ttl_count(Lawn* lawn);
+
+/*
+ * @return the number of unique timers in the lawn
+ */
+size_t timer_count(Lawn* lawn);
 
 /*
  * Insert ttl for a new key or update an existing one
  * @return LAWN_OK on success, LAWN_ERR on error
  */
-int set_element_ttl(Lawn* dehy, char* key, size_t len, mstime_t ttl_ms);
+int set_element_ttl(Lawn* lawn, char* key, size_t len, mstime_t ttl_ms);
 
 /*
  * Alias for set_element_ttl
  * @return LAWN_OK on success, LAWN_ERR on error
  */
-int add_new_node(Lawn* lawn, char* element, size_t len, mstime_t ttl_ms);
+int add_new_node(Lawn* lawn, char* element_key, size_t len, mstime_t ttl_ms);
 
 /*
  * Get the expiration value for the given key
  * @return datetime of expiration (in milliseconds) on success, -1 on error
  */
-mstime_t get_element_exp(Lawn* dehy, char* key);
+mstime_t get_element_exp(Lawn* lawn, char* key);
 
 /*
  * Remove TTL from the lawn for the given key
  * @return LAWN_OK
  */
-int del_element_exp(Lawn* dehy, char* key);
+int del_element_exp(Lawn* lawn, char* key);
 
 /*
  * @return the closest element expiration datetime (in milliseconds), or -1 if DS is empty
  */
-mstime_t next_at(Lawn* dehy);
+mstime_t next_at(Lawn* lawn);
 
 /*
  * Remove the element with the closest expiration datetime from the lawn and return it
  * @return a pointer to the node containing the element with closest 
  * expiration datetime or NULL if the lawn is empty.
  */
-ElementQueueNode* pop_next(Lawn* dehy);
+ElementQueueNode* pop_next(Lawn* lawn);
 
 /*
  * @return a queue of all exired element nodes.
  */
-ElementQueue* pop_expired(Lawn* dehy);
+ElementQueue* pop_expired(Lawn* lawn);
 
 
 

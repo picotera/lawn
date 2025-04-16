@@ -376,7 +376,17 @@ void freeLawn(Lawn* lawn)
  * @return the number of uniqe ttl entries in the lawn
  */
 size_t ttl_count(Lawn* lawn){
+    if (lawn == NULL){
+        return 0;
+    }
     return hashmap__size(lawn->timeout_queues);
+}
+
+size_t timer_count(Lawn* lawn){
+    if (lawn == NULL){
+        return 0;
+    }
+    return hashmap__size(lawn->element_nodes);
 }
 
 

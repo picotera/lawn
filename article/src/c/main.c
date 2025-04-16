@@ -12,11 +12,12 @@
 
 // Include headers for the datastores
 #include "../../../src/lawn.h"  // Lawn datastore
-#include "wheel/timeout.h"   // Timer wheel datastore
+#include "../../../src/utils/timerwheel.h"  // New timer wheel datastore
 
 // Default values
 #define DEFAULT_MIN_TTL 1000
 #define DEFAULT_MAX_TTL 60000
+#define DEFAULT_NUM_ITERATIONS 5
 #define DEFAULT_NUM_TIMERS 100000
 #define DEFAULT_PATTERN WORKLOAD_UNIFORM
 #define DEFAULT_VERBOSE false
@@ -24,6 +25,12 @@
 #define DEFAULT_DISCRETE_MODE false
 #define DEFAULT_DISCRETE_STEP 1000
 #define DEFAULT_TESTS TEST_ALL
+
+// Timer wheel context for benchmarking
+struct timerwheel_ctx {
+    struct timer_wheel wheel;
+    size_t num_timers;
+};
 
 /**
  * Lawn datastore adapter functions
@@ -51,116 +58,116 @@ static int lawn_tick(void* ds) {
     
     if (expired) {
         count = expired->len;
-        freeQueue(expired);
+        
+        // Free each node in the queue and the queue itself
+        ElementQueueNode* current = expired->head;
+        ElementQueueNode* next = NULL;
+        
+        while (current != NULL) {
+            next = current->next;
+            free(current->element); // Free the element
+            free(current);          // Free the node
+            current = next;
+        }
+        
+        // Free the queue structure
+        free(expired);
     }
     
     return count;
 }
 
 static size_t lawn_size(void* ds) {
-    // There's no direct way to get the size, but we can get the TTL count
-    // which gives us an approximation
-    return ttl_count((Lawn*)ds);
+    return timer_count((Lawn*)ds);
 }
 
 /**
  * Timer wheel datastore adapter functions
  */
 static void* timerwheel_init(void) {
-    struct timeouts* wheel = timeouts_open(TIMEOUT_mHZ, NULL);
-    if (!wheel) return NULL;
-    
-    // Return the timeouts structure
-    return (void*)wheel;
+    struct timerwheel_ctx *ctx = malloc(sizeof(*ctx));
+    if (!ctx)
+        return NULL;
+
+    // Initialize timer wheel with 1ms resolution
+    if (timer_wheel_init(&ctx->wheel, 1) != WHEEL_OK) {
+        free(ctx);
+        return NULL;
+    }
+
+    ctx->num_timers = 0;
+    return ctx;
 }
 
 static void timerwheel_destroy(void* ds) {
-    timeouts_close((struct timeouts*)ds);
+    if (!ds)
+        return;
+
+    struct timerwheel_ctx *ctx = ds;
+    timer_wheel_cleanup(&ctx->wheel);
+    free(ctx);
 }
 
 static int timerwheel_add_timer(void* ds, const char* key, size_t key_len, uint64_t ttl) {
-    struct timeouts* wheel = (struct timeouts*)ds;
+    if (!ds || !key)
+        return WHEEL_ERR;
+
+    struct timerwheel_ctx *ctx = ds;
     
-    // Allocate a timeout structure and a copy of the key
-    struct timeout* to = malloc(sizeof(struct timeout));
-    if (!to) return LAWN_ERR;
-    
-    char* key_copy = malloc(key_len + 1);
-    if (!key_copy) {
-        free(to);
-        return LAWN_ERR;
+    // Convert TTL from milliseconds to microseconds for timer wheel
+    uint64_t expires = ctx->wheel.current_time + (ttl * 1000);
+
+    // Add timer to wheel
+    if (timer_wheel_add(&ctx->wheel, key, key_len, expires) != WHEEL_OK) {
+        return WHEEL_ERR;
     }
-    
-    memcpy(key_copy, key, key_len);
-    key_copy[key_len] = '\0';
-    
-    // Initialize the timeout
-    timeout_init(to, 0);
-    
-    // Set callback data (storing the key)
-    to->callback.arg = key_copy;
-    
-    // Add to the wheel
-    timeouts_add(wheel, to, ttl);
-    
-    return LAWN_OK;
+
+    ctx->num_timers++;
+    return WHEEL_OK;
 }
 
 static int timerwheel_remove_timer(void* ds, const char* key) {
-    struct timeouts* wheel = (struct timeouts*)ds;
-    struct timeout* to = NULL;
-    bool found = false;
+    if (!ds || !key)
+        return WHEEL_ERR;
+
+    struct timerwheel_ctx *ctx = ds;
+    int result = timer_wheel_del(&ctx->wheel, key);
     
-    // Iterate over all timeouts to find the one with matching key
-    struct timeouts_it it;
-    TIMEOUTS_IT_INIT(&it, TIMEOUTS_ALL);
-    
-    while ((to = timeouts_next(wheel, &it))) {
-        char* to_key = (char*)to->callback.arg;
-        if (to_key && strcmp(to_key, key) == 0) {
-            // Found the timeout with the matching key
-            timeouts_del(wheel, to);
-            free(to_key);
-            free(to);
-            found = true;
-            break;
-        }
+    if (result == WHEEL_OK) {
+        ctx->num_timers--;
     }
     
-    return found ? LAWN_OK : LAWN_ERR;
+    return result;
 }
 
 static int timerwheel_tick(void* ds) {
-    struct timeouts* wheel = (struct timeouts*)ds;
-    int expired_count = 0;
-    struct timeout* to;
-    
-    // Update the wheel with current time
-    timeouts_update(wheel, time(NULL) * TIMEOUT_mHZ);
-    
-    // Process expired timeouts
-    while ((to = timeouts_get(wheel))) {
-        // Free the stored key and timeout structure
-        free(to->callback.arg);
-        free(to);
-        expired_count++;
-    }
-    
-    return expired_count;
-}
+    if (!ds)
+        return 0;
 
-static size_t timerwheel_size(void* ds) {
-    struct timeouts* wheel = (struct timeouts*)ds;
-    struct timeouts_it it;
-    size_t count = 0;
+    struct timerwheel_ctx *ctx = ds;
+    uint64_t old_time = ctx->wheel.current_time;
     
-    // Count all pending timeouts
-    TIMEOUTS_IT_INIT(&it, TIMEOUTS_PENDING);
-    while (timeouts_next(wheel, &it)) {
-        count++;
+    // Advance time by 1ms (in microseconds) and get expired timers
+    struct expired_queue* expired = timer_wheel_advance(&ctx->wheel, old_time + 1000);
+    
+    int count = 0;
+    if (expired) {
+        count = expired->len;
+        ctx->num_timers -= count;
+        
+        // Free the expired queue
+        free_expired_queue(expired);
     }
     
     return count;
+}
+
+static size_t timerwheel_size(void* ds) {
+    if (!ds)
+        return 0;
+
+    struct timerwheel_ctx *ctx = ds;
+    return ctx->num_timers;
 }
 
 /**
@@ -236,6 +243,7 @@ static void parse_args(int argc, char** argv, benchmark_config_t* config) {
     config->min_ttl = DEFAULT_MIN_TTL;
     config->max_ttl = DEFAULT_MAX_TTL;
     config->num_timers = DEFAULT_NUM_TIMERS;
+    config->num_iterations = DEFAULT_NUM_ITERATIONS;
     config->workload_pattern = DEFAULT_PATTERN;
     config->verbose = DEFAULT_VERBOSE;
     config->csv_output = DEFAULT_CSV_OUTPUT;

@@ -18,5 +18,8 @@ millisecond_time.a: $(CC_OBJECTS)
 hash_funcs.a: $(CC_OBJECTS)
 	ar rcs $@ $^
 
+timerwheel.a: $(CC_OBJECTS)
+	ar rcs $@ $^
+
 clean:
 	rm -rf *.o *.a
