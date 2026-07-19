@@ -10,17 +10,17 @@
 
 #include <stdbool.h>
 #include <stddef.h>
-#ifdef __GLIBC__
-#include <bits/wordsize.h>
-#else
-#include <bits/reg.h>
-#endif
 #include "libbpf_internal.h"
+
+/* Bits in a machine word. Derived from size_t rather than the glibc-only
+ * <bits/wordsize.h> / <bits/reg.h> so the map builds on macOS and the BSDs
+ * (matching the self-contained portability of the wahern timing-wheel code). */
+#define HASHMAP_WORDSIZE ((int)(sizeof(size_t) * 8))
 
 static inline size_t hash_bits(size_t h, int bits)
 {
 	/* shuffle bits and return requested number of upper bits */
-	return (h * 11400714819323198485llu) >> (__WORDSIZE - bits);
+	return (h * 11400714819323198485llu) >> (HASHMAP_WORDSIZE - bits);
 }
 
 typedef size_t (*hashmap_hash_fn)(const void *key, void *ctx);
