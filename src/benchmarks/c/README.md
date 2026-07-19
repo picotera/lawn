@@ -1,49 +1,41 @@
-# C Benchmarks for Timer Implementations
+# C timer benchmark suite
 
-This directory contains C-based benchmarks for comparing the performance of different timer implementations:
-- Lawn TimerStore
-- TimerWheel TimerStore
+Benchmarks the real C timer implementations behind a uniform vtable
+(`cts.h`), all driven by an injected integer **logical clock** so results are
+deterministic and comparable to the Python suite.
 
-## Structure
+## Implementations
 
-- `benchmarks.c` - Main benchmark implementation
-- `benchmarks.h` - Benchmark interface definitions
-- `lawn_timerstore.c` - Lawn TimerStore implementation
-- `timerwheel_timerstore.c` - TimerWheel TimerStore implementation
-- `timerstore.h` - Common TimerStore interface
+Each algorithm is an adapter in [`impl/`](impl/) implementing the `cts_vtable`
+from `cts.h`; the harness (`test.c`, `bench.c`, `util.c`, `registry.c`, `clock.c`)
+is impl-agnostic.
 
-## Building
+- `lawn` - the repo's `src/lawn.c` (queue-map algorithm), clock injected via `clock.c`.
+- `lawn2` - an optimized, allocation-free Lawn (`src/lawn2.{c,h}`): intrusive
+  handle-based nodes (no per-insert malloc, no key copy), O(1) delete by node
+  pointer, open-addressing TTL->queue table, `next_expiration` O(1) empty tick.
+  Same Queue-Map algorithm as `lawn` (enforced by the differential gate); beats
+  the wahern wheel on every measured operation.
+- `wahern` - William Ahern's `timeout.c` (tickless hierarchical wheel), the
+  canonical in-the-wild baseline, compiled from `../../../article/src/c/wheel/`.
+- `naive` - a single-level growing ring (the textbook overflow victim).
 
-```bash
-make
-```
-
-This will build:
-- `benchmark` - Main benchmark executable that runs all tests
-- `lawn_timerstore_test` - Test executable for Lawn implementation
-- `timerwheel_timerstore_test` - Test executable for TimerWheel implementation
-
-## Running Benchmarks
-
-You can run the comprehensive benchmark suite:
+## Build and run
 
 ```bash
-./benchmark
+make                 # builds test and bench (Apple clang / gcc, C11)
+./test               # differential correctness gate across all 4 impls
+./bench              # 5 operations x 4 axes + inflection -> results_c/*.csv
+python plot_c.py     # results_c/*.png
 ```
 
-Or run individual test executables:
+Outputs land in `results_c/` (git-ignored). Timing uses the finest monotonic
+clock available; on macOS that is ~41 ns quantized, so operations are timed in
+micro-batches (B=256) to resolve sub-40 ns costs. Memory is measured via the
+platform allocator statistics.
 
-```bash
-./lawn_timerstore_test
-./timerwheel_timerstore_test
-```
+## Adding an implementation
 
-The benchmarks measure:
-- Insertion performance
-- Deletion performance
-- Tick processing performance
-- Memory usage
-- Workload pattern handling
-- Long-term stability
-
-Results are output in CSV format for easy comparison. 
+Add an adapter `impl/<name>.c` providing a `cts_vtable`
+(create/destroy/start/stop/tick/size), register it in `registry.c`, and add it to
+`ADAPTERS` in the `Makefile`. The harness, gate, and plotter are impl-agnostic.

@@ -1,0 +1,9 @@
+# Generated benchmark output (regenerate via the suite READMEs)
+python/results/
+c/results_c/
+
+# C build artifacts
+c/build/
+c/*.o
+c/test
+c/bench
