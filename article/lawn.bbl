@@ -1,15 +1,5 @@
 \begin{thebibliography}{10}
 
-\bibitem{REND}
-B.~P. Douglass, {\em Real-Time Design Patterns}.
-\newblock Addison-Wesley, 2003.
-\newblock chapter 5: Concurrency Patterns (Rendezvous).
-
-\bibitem{WHT}
-A.~D. Vany, ``Uncertainty, waiting time, and capacity utilization: A stochastic
-  theory of product quality,'' {\em Journal of Political Economy}, vol.~84,
-  no.~3, pp.~523--541, 1976.
-
 \bibitem{BSD}
 A.~Costello, A.~M. Costello, G.~Varghese, and G.~Varghese, ``Redesigning the
   bsd callout and timer facilities,'' tech. rep., Washington University in St
@@ -39,15 +29,6 @@ H.~Hu, ``Large-scale timer management.'' US Patent no. US8307030B1.
 
 \bibitem{autoscale}
 Z.~ZhouIvan, ``On-demand scalable timer wheel.'' US Patent no. US20140298073A1.
-
-\bibitem{smartpq}
-C.~Giannoula, F.~Strati, D.~Siakavaras, G.~Goumas, and N.~Koziris, ``Smartpq:
-  An adaptive concurrent priority queue for numa architectures,'' 2024.
-
-\bibitem{numasched}
-A.~Drebes, A.~Pop, K.~Heydemann, N.~Drach, and A.~Cohen, ``Numa-aware
-  scheduling and memory allocation for data-flow task-parallel applications,''
-  {\em SIGPLAN Not.}, vol.~51, Feb. 2016.
 
 \bibitem{TWI}
 N.~Welch, ``timeout.c: Tickless hierarchical timing wheel implementation.''
