@@ -1,17 +1,21 @@
-/* Huge-scale N-only sweep: N in {1,2,4,10,20,40,100} million timers, with
- * distinct TTLs FIXED at 10000 (and ttl_span=10000 so the 10000 distinct
- * values are not clamped down, see util.c gen_ttls) to save time versus a
- * full axis sweep, per an ad-hoc request. Not part of the article pipeline;
- * exploratory only. Duplicates bench.c's measurement functions (rather than
- * refactoring the tracked bench.c) to keep zero risk to the existing suite.
+/* Single-cell runner for the full 4-axis sweep (n, ttl_span, distinct_ttls,
+ * workload) at scales beyond the main suite's baseline. This is a general
+ * per-process exploratory tool for large Ns, running one cell per process
+ * and letting the OS fully reclaim memory between attempts.
  *
- * Memory safety: at 100M timers a single store can run into multiple GB
- * (e.g. reference lawn's ~113 B/timer at 1M projects to >11GB at 100M on a
- * 24GB machine), so before building a store for a given (op, algo, N) this
- * estimates the requirement from a conservative bytes-per-timer table and
- * skips (logging why, no crash) rather than risk exhausting memory. Each
- * measurement function still builds/destroys exactly one store at a time
- * in-process, so at most one store's worth of memory is live at once.
+ *   ./bench_huge <op> <algo> <axis> <n> <ttl_span> <distinct> <workload> [safety_pct]
+ *
+ * Appends one row to results_c/huge_full_sweep/<op>_<axis>.csv (axis is just
+ * a label for the filename/column header, matching bench.c's convention; it
+ * does not change what is measured, only the file it's written to and the
+ * value written in the first CSV column).
+ *
+ * safety_pct is the fraction of currently-free+inactive+speculative memory
+ * (see free_and_inactive_bytes) this run is allowed to use, as a percentage
+ * (e.g. 85 means 85%). Defaults to 85 if omitted: conservative enough for
+ * routine sweeps, while still overridable per-invocation for a one-off run
+ * that needs to approach the memory ceiling (this session pushed as high as
+ * 98% for specific maximal-scale points).
  */
 #include "cts.h"
 #include "util.h"
@@ -19,14 +23,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <unistd.h>
-#include <malloc/malloc.h>   /* macOS: malloc_zone_statistics */
+#include <malloc/malloc.h>
 
 #define MAX_OPS 20000
 #define TICKS   2000
 #define WINDOW  200
 #define SEED0   1234
 #define BATCH   256
+#define DEFAULT_SAFETY_PCT 85.0
 
 typedef struct {
     size_t   n;
@@ -37,8 +41,6 @@ typedef struct {
 } params_t;
 
 typedef size_t (*measure_fn)(const cts_vtable *, params_t, double *);
-
-/* ---- measurements (verbatim copies of bench.c; see that file for comments) ---- */
 
 static size_t m_insert(const cts_vtable *vt, params_t p, double *out) {
     uint64_t *ttls = malloc(p.n * sizeof *ttls);
@@ -126,7 +128,7 @@ static size_t m_memory(const cts_vtable *vt, params_t p, double *out) {
 }
 
 static agg_t run_point(const cts_vtable *vt, measure_fn fn, params_t p, size_t per_run_max) {
-    int runs = 3, warmup = 1;   /* huge scale: keep it light regardless */
+    int runs = 3, warmup = 1;
     double *buf = malloc(per_run_max * (size_t)runs * sizeof(double));
     double *tmp = malloc(per_run_max * sizeof(double));
     size_t total = 0;
@@ -140,108 +142,111 @@ static agg_t run_point(const cts_vtable *vt, measure_fn fn, params_t p, size_t p
     return a;
 }
 
-static void header(FILE *f, int is_mem) {
-    const char *u = is_mem ? "bytes" : "ns";
-    fprintf(f, "n,algo,mean_%s,std_%s,p99_%s,max_%s,n_samples,runs,warmup,seed\n", u, u, u, u);
-}
-
-static void row(FILE *f, size_t n, const char *algo, agg_t a) {
-    fprintf(f, "%zu,%s,%.4f,%.4f,%.4f,%.4f,%zu,3,1,%d\n",
-            n, algo, a.mean, a.std, a.p99, a.max, a.n, SEED0);
+static void row(FILE *f, const char *val, const char *algo, agg_t a) {
+    fprintf(f, "%s,%s,%.4f,%.4f,%.4f,%.4f,%zu,3,1,%d\n",
+            val, algo, a.mean, a.std, a.p99, a.max, a.n, SEED0);
 }
 
 /* ---- memory guard ---- */
 
 static double free_and_inactive_bytes(void) {
+    /* free + inactive + speculative: all three are pages macOS reclaims
+     * without writing anything out (speculative is unread readahead cache),
+     * so all three are "available" in the same sense. Excluding speculative
+     * was undercounting real headroom, sometimes by several GB. */
     FILE *p = popen("vm_stat", "r");
     if (!p) return -1.0;
     char line[256];
-    long free_pages = 0, inactive_pages = 0, pagesize = 16384;
+    long free_pages = 0, inactive_pages = 0, speculative_pages = 0, pagesize = 16384;
     while (fgets(line, sizeof line, p)) {
         long v;
         if (sscanf(line, "page size of %ld bytes", &v) == 1) pagesize = v;
         else if (sscanf(line, "Pages free: %ld.", &v) == 1) free_pages = v;
         else if (sscanf(line, "Pages inactive: %ld.", &v) == 1) inactive_pages = v;
+        else if (sscanf(line, "Pages speculative: %ld.", &v) == 1) speculative_pages = v;
     }
     pclose(p);
-    return (double)(free_pages + inactive_pages) * (double)pagesize;
+    return (double)(free_pages + inactive_pages + speculative_pages) * (double)pagesize;
 }
 
 static double bytes_per_timer_estimate(const char *algo) {
-    /* Conservative: padded well above the ~1M-scale measurements in
-     * results_c/memory_per_timer_n.csv (lawn ~113, lawn2 ~40, wahern ~88,
-     * naive ~38 B/timer) to leave margin for any worse scaling at 100M. */
-    if (!strcmp(algo, "lawn"))   return 170.0;
-    if (!strcmp(algo, "lawn2"))  return 55.0;
-    if (!strcmp(algo, "wahern")) return 110.0;
-    if (!strcmp(algo, "naive"))  return 65.0;
-    return 200.0;
+    if (!strcmp(algo, "lawn"))   return 115.0;
+    if (!strcmp(algo, "lawn2"))  return 44.0;
+    if (!strcmp(algo, "wahern")) return 100.0;
+    if (!strcmp(algo, "naive"))  return 56.0;
+    return 150.0;
 }
 
-/* Also account for the two full-size uint64 TTL/permutation arrays every
- * measurement allocates alongside the store (8 or 16 bytes/timer). */
-static int memory_ok(const char *algo, size_t n, double *need_gb_out, double *budget_gb_out) {
+static int memory_ok(const char *algo, size_t n, double safety_pct,
+                      double *need_gb_out, double *budget_gb_out) {
     double need = (bytes_per_timer_estimate(algo) + 16.0) * (double)n;
     double avail = free_and_inactive_bytes();
-    double budget = avail < 0 ? 1e18 /* unknown: don't block */ : avail * 0.55;
+    double budget = avail < 0 ? 1e18 : avail * (safety_pct / 100.0);
     *need_gb_out = need / 1e9;
     *budget_gb_out = budget / 1e9;
     return need <= budget;
 }
 
-/* ---- sweep driver: n axis only, distinct/ttl_span fixed at 10000 ---- */
+static int wl_from_name(const char *s) {
+    if (!strcmp(s, "uniform")) return WL_UNIFORM;
+    if (!strcmp(s, "bursty"))  return WL_BURSTY;
+    if (!strcmp(s, "spread"))  return WL_SPREAD;
+    return -1;
+}
 
-static const size_t N_VALS[] = {1000000, 2000000, 4000000, 10000000, 20000000, 40000000, 100000000};
-#define NNV (sizeof(N_VALS) / sizeof(N_VALS[0]))
-
-typedef struct { const char *name; measure_fn fn; size_t per_run_max; int is_mem; } op_t;
-
-int main(void) {
-    const char *dir = "results_c/huge_scale";
-    if (system("mkdir -p results_c/huge_scale")) {}
-
-    op_t ops[] = {
-        {"insert",       m_insert, MAX_OPS / BATCH + 2, 0},
-        {"delete",       m_delete, MAX_OPS / BATCH + 2, 0},
-        {"tick_advance", m_tick,   TICKS / BATCH + 2,   0},
-        {"expiry",       m_expiry, 2,                   0},
-        {"memory",       m_memory, 1,                   1},
-    };
-
-    printf("huge-scale sweep | N=1e6..1e8 | ttl_span=10000 distinct=10000 uniform | algos:");
-    for (int a = 0; a < cts_nalgos; a++) printf(" %s", cts_algos[a]->name);
-    printf("\n");
-
-    for (size_t o = 0; o < sizeof ops / sizeof ops[0]; o++) {
-        char path[512]; snprintf(path, sizeof path, "%s/%s_n.csv", dir, ops[o].name);
-        FILE *f = fopen(path, "w");
-        header(f, ops[o].is_mem);
-        printf("%s vs n ...\n", ops[o].name); fflush(stdout);
-
-        for (size_t vi = 0; vi < NNV; vi++) {
-            size_t n = N_VALS[vi];
-            for (int a = 0; a < cts_nalgos; a++) {
-                const cts_vtable *vt = cts_algos[a];
-                double need_gb, budget_gb;
-                if (!memory_ok(vt->name, n, &need_gb, &budget_gb)) {
-                    printf("  SKIP %s n=%zu (needs ~%.1fGB, safe budget ~%.1fGB)\n",
-                           vt->name, n, need_gb, budget_gb);
-                    fflush(stdout);
-                    continue;
-                }
-                params_t p = {n, 10000, 10000, WL_UNIFORM, SEED0};
-                uint64_t t0 = cts_now_ns();
-                agg_t agg = run_point(vt, ops[o].fn, p, ops[o].per_run_max);
-                double secs = (double)(cts_now_ns() - t0) / 1e9;
-                row(f, n, vt->name, agg);
-                fflush(f);
-                printf("  %-8s n=%-11zu mean=%.2f  (%.1fs)\n", vt->name, n, agg.mean, secs);
-                fflush(stdout);
-            }
-        }
-        fclose(f);
-        printf("  wrote %s\n", path);
+int main(int argc, char **argv) {
+    if (argc != 8 && argc != 9) {
+        fprintf(stderr, "usage: %s <op> <algo> <axis_label> <n> <ttl_span> <distinct> <workload> [safety_pct]\n", argv[0]);
+        return 2;
     }
-    printf("done.\n");
+    const char *opname = argv[1], *algoname = argv[2], *axis = argv[3];
+    size_t n = (size_t)strtoull(argv[4], NULL, 10);
+    uint64_t ttl_span = strtoull(argv[5], NULL, 10);
+    uint64_t distinct = strtoull(argv[6], NULL, 10);
+    int workload = wl_from_name(argv[7]);
+    if (workload < 0) { fprintf(stderr, "unknown workload %s\n", argv[7]); return 2; }
+    double safety_pct = argc == 9 ? strtod(argv[8], NULL) : DEFAULT_SAFETY_PCT;
+
+    const cts_vtable *vt = NULL;
+    for (int a = 0; a < cts_nalgos; a++)
+        if (!strcmp(cts_algos[a]->name, algoname)) vt = cts_algos[a];
+    if (!vt) { fprintf(stderr, "unknown algo %s\n", algoname); return 2; }
+
+    measure_fn fn; size_t per_run_max; int is_mem = 0;
+    if (!strcmp(opname, "insert"))            { fn = m_insert; per_run_max = MAX_OPS / BATCH + 2; }
+    else if (!strcmp(opname, "delete"))       { fn = m_delete; per_run_max = MAX_OPS / BATCH + 2; }
+    else if (!strcmp(opname, "tick_advance")) { fn = m_tick;   per_run_max = TICKS / BATCH + 2; }
+    else if (!strcmp(opname, "expiry"))       { fn = m_expiry; per_run_max = 2; }
+    else if (!strcmp(opname, "memory"))       { fn = m_memory; per_run_max = 1; is_mem = 1; }
+    else { fprintf(stderr, "unknown op %s\n", opname); return 2; }
+    (void)is_mem;
+
+    double need_gb, budget_gb;
+    if (!memory_ok(algoname, n, safety_pct, &need_gb, &budget_gb)) {
+        printf("SKIP %-8s %-13s axis=%-13s n=%-11zu (needs ~%.1fGB, safe budget ~%.1fGB at %.0f%%)\n",
+               opname, algoname, axis, n, need_gb, budget_gb, safety_pct);
+        return 0;
+    }
+
+    params_t p = {n, ttl_span, distinct, workload, SEED0};
+    uint64_t t0 = cts_now_ns();
+    agg_t agg = run_point(vt, fn, p, per_run_max);
+    double secs = (double)(cts_now_ns() - t0) / 1e9;
+
+    if (system("mkdir -p results_c/huge_full_sweep")) {}
+    char path[512]; snprintf(path, sizeof path, "results_c/huge_full_sweep/%s_%s.csv", opname, axis);
+    FILE *f = fopen(path, "a");
+    if (!f) { fprintf(stderr, "cannot open %s\n", path); return 1; }
+    /* value column: whichever parameter this axis varies */
+    char valstr[32];
+    if (!strcmp(axis, "n"))                 snprintf(valstr, sizeof valstr, "%zu", n);
+    else if (!strcmp(axis, "ttl_span"))     snprintf(valstr, sizeof valstr, "%llu", (unsigned long long)ttl_span);
+    else if (!strcmp(axis, "distinct_ttls"))snprintf(valstr, sizeof valstr, "%llu", (unsigned long long)distinct);
+    else                                    snprintf(valstr, sizeof valstr, "%s", argv[7]);
+    row(f, valstr, algoname, agg);
+    fclose(f);
+
+    printf("OK   %-8s %-13s axis=%-13s n=%-11zu ttl_span=%-9llu distinct=%-7llu %-8s mean=%.2f  (%.1fs, safety=%.0f%%)\n",
+           opname, algoname, axis, n, (unsigned long long)ttl_span, (unsigned long long)distinct, argv[7], agg.mean, secs, safety_pct);
     return 0;
 }
