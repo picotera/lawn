@@ -233,7 +233,7 @@ static double mean_lifecycle(const cts_vtable *vt, size_t n, uint64_t t) {
 }
 
 static void inflection(const char *dir) {
-    static const size_t   NS[] = {10000, 100000, 1000000};
+    static const size_t   NS[] = {10000, 100000, 1000000, 10000000};
     static const uint64_t TS[] = {1,2,5,10,20,50,100,200,500,1000,2000,5000,10000};
     char path[512]; snprintf(path, sizeof path, "%s/inflection.csv", dir);
     FILE *f = fopen(path, "w");
@@ -248,7 +248,7 @@ static void inflection(const char *dir) {
         if (!strcmp(cts_algos[a]->name, "naive")) naive = cts_algos[a];
     }
     printf("inflection (lifecycle vs wahern; crossover reported for lawn2):\n");
-    for (size_t ni = 0; ni < 3; ni++) {
+    for (size_t ni = 0; ni < 4; ni++) {
         size_t n = NS[ni];
         double prev_ratio2 = 0, prev_t = 0, xover2 = 0;
         for (size_t ti = 0; ti < sizeof TS / sizeof TS[0]; ti++) {

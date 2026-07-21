@@ -36,7 +36,7 @@
 \makesavenoteenv{tabular}
 \makesavenoteenv{table}
 
-\title{Timer Lawn: Solving the Timer Wheel Overflow Problem for Large Scale and High Throughput Systems} 
+\title{Timer Lawn: Solving the Timer Wheel Overflow Problem for Large Scale and High Throughput Systems}
 
 
 \author{
@@ -53,7 +53,7 @@
 \maketitle
 
 \begin{abstract}
-As the usage of Real-Time applications and algorithms rises, so does the importance of enabling large-scale, unbound algorithms to solve conventional problems with low to no latency becomes critical for product viability\cite{REND, WHT}. Timer algorithms are prevalent in the core mechanisms behind operating systems\cite{BSD}, network protocol implementation, real-time and stream processing, and several database capabilities. This paper presents a field-tested algorithm for low latency, unbound timer data structure, that improves upon the well excepted Timing Wheel algorithm. Using a set of queues mapped to by TTL instead of expiration time, the algorithm allows for a simpler implementation, minimal overhead no overflow and no performance degradation in comparison to the current state of the art.
+Timer facilities sit at the core of operating systems\cite{BSD}, network protocol implementations, real-time and stream processing, and several database capabilities. This paper presents Lawn, a field-tested timer data structure that maps queues by time-to-live (TTL) rather than by expiration time, so that its span is unbounded and it never rebuilds on overflow. We give the algorithm and its analysis, and evaluate an allocation-free implementation (Lawn2) against a production tickless hierarchical timing wheel and a naive single-level wheel. When the number of distinct TTLs is small relative to the number of live timers, Lawn2 deletes about 3.4 times faster, inserts about 1.4 to 1.9 times faster at scale, uses about 2.2 times less memory per timer, and holds memory flat across an unbounded TTL span. It also drains due timers faster than the wheel under every realistic TTL distribution we tested, by 4.9 to 27 times depending on how TTLs cluster, and keeps the idle per-tick check at $O(1)$ (about 1\,ns versus the wheel's cascade-bound $\sim$12.9\,$\mu$s at one million timers). These advantages are contingent: once the distinct-TTL count grows past roughly 1--5\% of the live-timer count, per-tick cost becomes $O(t)$ and Lawn loses to the wheel. Even on the winning side of this boundary, ``small'' is relative rather than tiny in absolute terms: at one million live timers the crossover sits near nine thousand distinct TTLs, well within the range large-scale applications with a bounded, discrete TTL set actually use. We state this boundary quantitatively and report where Lawn should and should not be used.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -61,52 +61,47 @@ Stream Processing, Timing Wheel, Dehydrator, Callout facilities, protocol implem
 \end{IEEEkeywords}
 
 \section{Introduction}
-This paper presents a theoretical analysis of a timer data-structure designed for use with hi-throughput computer systems called Lawn. In this paper, it will be shown that although the current state of the art algorithm is theoretically optimal, under some use cases (namely where max TTL is unpredictable, or the needed Tick resolution may change) it is under-performing due to the overflow problem, which the algorithm presented here addresses. Utilizing Lawn may assist in improving overall performance and flexibility in TTL and Tick resolution with no need for any prior knowledge of the using system apart from it not utilizing non-discrete stochastic values for timer TTLs.
+This paper presents a timer data structure designed for high-throughput computer systems, called Lawn. The current state-of-the-art algorithm, the Timing Wheel, is asymptotically optimal, but under some use cases (namely where the maximum TTL is unpredictable, or the needed tick resolution may change) it under-performs due to the overflow problem, which Lawn addresses. Lawn improves flexibility in TTL and tick resolution with no need for prior knowledge of the using system, under the single requirement that timer TTLs are drawn from a bounded set of discrete values. We make both a theoretical and an empirical case, and we are explicit about the regime in which the empirical advantage holds.
+
 \subsection{Model}
-In a similar manner to previous work\cite{TW, CQ, EMP}, the model discussed in this paper shall consist of the following components, each corresponding with a different stage in the life cycle of a timer in the data store:
+In a similar manner to previous work\cite{TW, CQ, EMP}, the model discussed in this paper consists of the following components, each corresponding with a different stage in the life cycle of a timer in the data store:
 
 \begin{center}
 	$
-	StartTimer \linebreak 
-	\downarrow \linebreak  
-	PerTickBookkeeping \hspace{1mm} \backtrackarrow \linebreak 
-	\swarrow  \hspace{15pt}  \searrow \linebreak 
+	StartTimer \linebreak
+	\downarrow \linebreak
+	PerTickBookkeeping \hspace{1mm} \backtrackarrow \linebreak
+	\swarrow  \hspace{15pt}  \searrow \linebreak
 	DeleteTimer \hspace{15pt} TimerExpired
 	$
 \end{center}
 
 
-\paragraph{\textbf{StartTimer(TTL,timerId,Payload)}} This routine is called by the client to start a timer that will expire in after the TTL has passed. The client is also expected to supply a \textit{timer ID} in order to distinguish it from other timers in the data store. Some implementations also allow the client to provide a \textit{Payload}, usually some form of a callback action to be performed or data to be returned on timer expiration.
+\paragraph{\textbf{StartTimer(TTL,timerId,Payload)}} This routine is called by the client to start a timer that will expire after the TTL has passed. The client is also expected to supply a \textit{timer ID} in order to distinguish it from other timers in the data store. Some implementations also allow the client to provide a \textit{Payload}, usually some form of a callback action to be performed or data to be returned on timer expiration.
 
-\paragraph{\textbf{PerTickBookkeeping()}} This routine encompasses all the actions, operation and callbacks to be performed as part of timer management and expiration check every interval as determined by the data store granularity. Upon discovery of an outstanding timer to expire \textit{TimerExpired} will be initiated by this routine.
+\paragraph{\textbf{PerTickBookkeeping()}} This routine encompasses all the actions, operations and callbacks to be performed as part of timer management and expiration check every interval as determined by the data store granularity. Upon discovery of an outstanding timer to expire \textit{TimerExpired} is initiated by this routine.
 
-\paragraph{\textbf{DeleteTimer(timerId)}} The client may call this utility routine in order to remove from the data store an outstanding timer (corresponding with a given \textit{timer ID}), this is done by calling \textit{TimerExpired} for the requested timer before \textit{PerTickBookkeeping} had marked it to be expired.
+\paragraph{\textbf{DeleteTimer(timerId)}} The client may call this utility routine in order to remove from the data store an outstanding timer (corresponding with a given \textit{timer ID}), before \textit{PerTickBookkeeping} has marked it to be expired.
 
-\paragraph{\textbf{TimerExpired(timerId})} Internally invoked by either \textit{PerTickBookkeeping} or \textit{DeleteTimer} this routine entails all actions and operations needed in order to remove all traces of the timer corresponding with a given \textit{timer ID} from the data store and invoking the any callbacks that were provided as \textit{Payload} during the \textit{StartTimer} routine.
+\paragraph{\textbf{TimerExpired(timerId})} Internally invoked by either \textit{PerTickBookkeeping} or \textit{DeleteTimer}, this routine entails all actions and operations needed to remove all traces of the timer corresponding with a given \textit{timer ID} from the data store, and to invoke any callbacks that were provided as \textit{Payload} during the \textit{StartTimer} routine.
 
-\subsection{callback run-time complexity}
+\subsection{Callback run-time complexity}
 
-Since payload and callback run-time complexity varies significantly between different data store implementations, the store of such data can be achieved for $ O(1) $ using a simple hash map, and the handling of such callbacks can be done in a discrete, highly (or even embarrassingly) parallel, this paper will disregard this aspect of timer stores.
+Since payload and callback run-time complexity varies between implementations, and the store of such data can be achieved in amortized $O(1)$ using a hash map with callback handling done in a discrete, highly (or even embarrassingly) parallel manner, this paper disregards this aspect of timer stores.
 
 \section{Related Work}
-Timer implementations have been extensively studied in the literature, with a focus on efficiency, scalability, and correctness. This section reviews the key developments in timer data structures and related work in high-performance computing.
+Timer implementations have been extensively studied, with a focus on efficiency, scalability, and correctness. This section reviews the key developments relevant to this work.
 
 \subsection{Timer Data Structures}
-The most influential work on timer data structures is the Timing Wheel algorithm proposed by Varghese and Lauck \cite{TW87}. This algorithm provides O(1) operations for timer insertion, deletion, and expiration, making it theoretically optimal. However, as discussed in this paper, it suffers from the overflow problem in scenarios with unpredictable TTL ranges.
+The most influential work on timer data structures is the Timing Wheel algorithm proposed by Varghese and Lauck \cite{TW87}. In the common case it provides $O(1)$ operations for timer insertion, deletion, and expiration, which is asymptotically optimal. However, as discussed below, it suffers from the overflow problem in scenarios with unpredictable TTL ranges.
 
-Several extensions to the Timing Wheel algorithm have been proposed to address the overflow problem. The Hierarchical Timing Wheel \cite{TW} uses multiple levels of wheels to handle a wider range of TTLs, but introduces additional complexity and memory overhead. The Multi-Pass approach \cite{CQ} handles overflow by tracking the number of wheel cycles for each timer, but can lead to O(n) complexity for PerTick operations in the worst case.
-
+Several extensions address the overflow problem. The Hierarchical Timing Wheel \cite{TW} uses multiple levels of wheels to handle a wider range of TTLs, at the cost of additional complexity, periodic cascade work, and memory overhead. The Multi-Pass approach \cite{CQ} handles overflow by tracking the number of wheel cycles for each timer, but can lead to $O(n)$ complexity for \textit{PerTickBookkeeping} in the worst case.
 
 \subsection{Concurrent Timer Implementations}
-Concurrent timer implementations have received significant attention in recent years, driven by the need for scalable timer facilities in multi-threaded and distributed systems. \cite{largescale} presents a scalable timer implementation for large-scale systems, while \cite{autoscale} proposes an auto-scaling timer implementation for cloud environments.
-
-Lock-free timer implementations have been proposed to minimize contention in high-concurrency scenarios, as well as RCU-based timer implementations for read-heavy workloads.
-
-\subsection{NUMA-Aware Timer Implementations}
-NUMA-aware timer implementations have gained importance with the proliferation of NUMA architectures in modern servers. \cite{smartpq} presents a NUMA-aware timer implementation for high-performance computing, while \cite{numasched} explores the implications of NUMA in similar applications.
+Concurrent timer implementations are an active research area, driven by the need for scalable timer facilities in multi-threaded and distributed systems. \cite{largescale} presents a scalable timer implementation for large-scale systems, while \cite{autoscale} proposes an auto-scaling timer implementation for cloud environments. Lock-free and RCU-based timer implementations have been proposed to minimize contention. We note that Lawn, as evaluated here, does not itself implement a lock-free timer. Concurrency is discussed as an architectural property and left as future work (Section~\ref{sec:concurrency}).
 
 \subsection{Distributed Timer Implementations}
-Distributed timer implementations have been studied in the context of distributed systems and cloud computing. \cite{autoscale} presents a distributed timer implementation for cloud environments. However, the nature of these algorithms and their implementations lend themselves to high distribution to edge nodes when in use in local applications, and require no centralized timer management. Hence, distributed implementations are derived naively and will not be discussed further.
+The nature of the algorithms studied here lends itself to distribution to edge nodes in local applications, requiring no centralized timer management. Hence, distributed implementations are derived naively and are not discussed further.
 
 
 \section{Current Solutions}
@@ -115,17 +110,16 @@ Distributed timer implementations have been studied in the context of distribute
 
 \complexity{List Based}{Tree Based}{n}{log(n)}{1}{1}{n}{log(n)}{common data structure based schemes}
 
-Being included as an integral part of almost any modern programming language, these basic data structures enable convenient and simple addition of timer management to any software. That said, such simple structures suffer from oversimplification and are appropriate for very unique use cases - where the number of timers it fairly small or the ticks are far enough from one another. Using such implementations for large scale applications will require the grouping of timer producers and consumers into groups small 
-
+Being included as an integral part of almost any modern programming language, these basic data structures enable convenient addition of timer management to any software. That said, such simple structures are appropriate only for narrow use cases, where the number of timers is small or the ticks are far enough apart. The complexities above are the textbook figures for a sorted list and a balanced tree. They are not to be confused with the unsorted-append \textit{naive} baseline benchmarked in Section~\ref{sec:eval}, which is a different data structure.
 
 
 \subsection{Hashed Timing Wheel}
 \complexity{Worst}{Mean}{n}{1}{n}{1}{1}{1}{the Hashed Timing Wheel scheme}
-The Hashed Timing Wheel was designed to be an all-purpose timer storage solution for a unified system of known size and resolution\cite{TW87, TW, TWI, largescale, autoscale}. While previous work has shown that Hashed Timing Wheels have optimal run-time complexity, and in ideal conditions are in fact, optimal, real-world implementations would suffer from either being bound by maximal TTL and resolution combination, or would require a costly ($O(n)$) run-time re-build upon of the data structure upon reaching such limits (in \cite{CQ} it is referred to as "the overflow problem"). For large numbers of timers, producers, or consumers as is common in large scale operations, the simplest and mose effective solution is to overestimate the needed resolution and/or TTL so to abstain from rebuilding (resizing) for as long as possible.
+The Hashed Timing Wheel was designed as an all-purpose timer storage solution for a unified system of known size and resolution\cite{TW87, TW, TWI, largescale, autoscale}. In ideal conditions its run-time complexity is optimal, but real-world implementations are bound by the maximal TTL and resolution combination, or require a costly ($O(n)$) run-time rebuild upon reaching such limits (in \cite{CQ} this is referred to as ``the overflow problem''). For large numbers of timers, the common workaround is to over-estimate the needed resolution and/or TTL so as to postpone rebuilding (resizing) for as long as possible.
 
 \subsection{Overflow Algorithms}
-in order to handle overflows correctly there are two valid options:
-\subsubsection{increase current wheel slots (Alg. \ref{alg:overflow_resize})} Resize the overflowing wheel so it would include a larger number of slots into the future. This change entails a worst case cost of $O(n)$ upon any addition of an overflowing timer.
+To handle overflows correctly there are two valid options.
+\subsubsection{Increase current wheel slots (Alg. \ref{alg:overflow_resize})} Resize the overflowing wheel so it includes a larger number of slots into the future. This entails a worst-case cost of $O(n)$ upon any addition of an overflowing timer.
 
 \begin{algorithm}
 	\caption{Timer Wheel Resize\label{alg:overflow_resize}}
@@ -148,7 +142,7 @@ in order to handle overflows correctly there are two valid options:
 \end{algorithm}
 
 
-\subsubsection{in place addition of cycle count for each item (Alg. \ref{alg:overflow_inplace})} Each element in a slot is also stored with the number of wheel cycles needed before element expiration. This change entails a worst case cost of $O(n)$ for all \textit{PerTickBookkeeping} operation.
+\subsubsection{In-place addition of cycle count for each item (Alg. \ref{alg:overflow_inplace})} Each element in a slot is stored with the number of wheel cycles needed before expiration. This entails a worst-case cost of $O(n)$ for the \textit{PerTickBookkeeping} operation.
 
 \begin{algorithm}
 	\caption{Timer Wheel Multi-Pass (in-place)\label{alg:overflow_inplace}}
@@ -162,7 +156,7 @@ in order to handle overflows correctly there are two valid options:
 		\EndFunction
 		\Statex
 		\Function{PerTickBookkeeping}{}
-		\Let{current slot}{current slot + 1} 
+		\Let{current slot}{current slot + 1}
 		\For{element \textbf{in} current slot}
 			\Let{element.cycles}{element.cycles-1}
 			\If{element.cycles <= 0}
@@ -174,28 +168,27 @@ in order to handle overflows correctly there are two valid options:
 \end{algorithm}
 
 \section{The Lawn Data Structure}
- 
+
 \subsection{Intended Use Cases}
 
-This algorithm was first developed during the writing of a large scale, Stream Processing geographic intersection product\cite{VUSR} using a FastData\cite{GP} model. The data structure was to receive inputs from one or more systems that make use of a very limited range of TTLs in proportion to the number of concurrent timers they use. 
+This algorithm was first developed during the construction of a large-scale, Stream Processing geographic intersection product\cite{VUSR} using a FastData\cite{GP} model. The data structure receives inputs from one or more systems that make use of a very limited range of TTLs in proportion to the number of concurrent timers they use.
 
 \paragraph{Assumptions and Constraints}
-As this algorithm was originally designed to operate as the core of a dehydration utility for a single FastData application, where TTLs are usually discrete and variance is low it is intended for use under the assumptions that: 
+Lawn is intended for use under the assumption that
 \begin{center}
-	$ Unique\ TTL\ Count \ll Concurrent\ Timer\ Count $
+	$ Unique\ TTL\ Count \ll Concurrent\ Timer\ Count. $
 \end{center}
-Assuming that most timers will have a TTL from within a small set of options will enable the application of the core concept behind the algorithm - TTL bucketing. 
+This is the load-bearing assumption of the whole approach. When it holds, TTL bucketing yields the results below. When it fails, Lawn degrades to $O(n)$ per tick and loses to the wheel. This assumption is expected to hold in most deployed systems: when TTLs originate from an algorithmic or configuration-driven source, such as a fixed backoff schedule or a small number of cache-tier classes, the set of possible values is bounded by construction and does not grow with the number of live timers. Section~\ref{sec:eval} quantifies exactly where the crossover lies.
 
 \subsubsection{The Data Structure}
-Lawn is, at its core, a hash of sorted sets\footnote{These are the TTL 'buckets'}, much like Timing Wheel. The main difference is the key used for hashing these sets is the timer TTL. Meaning different timers will be stored in the same set based only on their TTL regardless of arrival time. Within each set, the timers are naturally sorted by time of arrival - effectively using the set as a queue  (as can be seen in fig. \ref{fig:Lawn1}). Using this queuing methodology based on TTL, we ensure that whenever a new timer is added to a queue, every other timer that is already there would be expired before the current one, since it is already in the queue and have the same TTL.
+Lawn is, at its core, a hash of sorted sets\footnote{These are the TTL `buckets'}, much like the Timing Wheel. The main difference is the key used for hashing these sets: the timer TTL. Different timers are stored in the same set based only on their TTL, regardless of arrival time. Within each set, the timers are naturally sorted by time of arrival, effectively using the set as a queue (fig. \ref{fig:Lawn1}). Because two timers in the same bucket share a TTL, any timer already in the queue will expire before a newly added one, so the queue stays sorted by expiration for free.
 
-The data structure is analogous to blades of grass (hence the name) - each blade grows from the roots up, and periodically (in our case every $Tick$) the overgrown tops of the grass blades (the expired timers) are maintained by mowing the lawn to the desired level (current time).
+The data structure is analogous to blades of grass (hence the name): each blade grows from the roots up, and periodically (every $Tick$) the overgrown tops (the expired timers) are maintained by mowing the lawn to the desired level (current time).
 
 \begin{figure}
 	\centering
 	\includegraphics[width=0.9\linewidth]{lawn.png}
 	\caption[Lawn schematic diagram]{A schematic view of the data structure components.}
-%	\Description[Lawn schematic diagram]{A schematic view of the data structure components.}
 	\label{fig:Lawn1}
 \end{figure}
 
@@ -204,7 +197,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 	\caption{The Lawn Data Store \label{alg:lawn}}
 	\begin{algorithmic}[1]
 		\Require{\\$id$ - a unique identifier of a timer.\\ $ttl$ - a whole product of $Tick Resolution$ representing the amount of time to wait before triggering the given timer $payload$ action.\\$payload$ - the action to perform upon timer expiration.\\\textit{current time} - the local time of the system as a whole product of $Tick Resolution$}
-		
+
 		\Statex
 		\Function{InitLawn}{{}}
 			\Let{TTLHash}{new empty hash set}
@@ -213,7 +206,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 		\EndFunction
 		\Statex
 		\Function{StartTimer}{$id$, $ttl$, $payload$}
-			\Let{$endtime$}{current time + $ttl$} %\Comment{current time: the local time of the system as a whole product of $Tick Resolution$}
+			\Let{$endtime$}{current time + $ttl$}
 			\Let{$T$}{$(endtime,ttl,id,payload)$}
 			\Let{TimerHash[$id$]}{$T$}
 			\If{$ttl \notin$ TTLHash}
@@ -243,7 +236,7 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 		\Statex
 		\Function{TimerExpired}{$id$}
 			\Let{$T$}{TimerHash[$id$]}
-			\State{\textbf{DeleteTimer}($T$)} 
+			\State{\textbf{DeleteTimer}($T$)}
 			\State{\textbf{do} $T_{payload}$}
 		\EndFunction
 		\Statex
@@ -252,487 +245,268 @@ The data structure is analogous to blades of grass (hence the name) - each blade
 			\If{$T_{endtime} = closest\ expiration$}
 			\Let{$closest\ expiration$}{0}
 			\EndIf
-			\State{TTLHash[$T_{ttl}$].\textbf{remove}($T$)} 
-			\State{TimerHash.\textbf{remove}($T$)} 
+			\State{TTLHash[$T_{ttl}$].\textbf{remove}($T$)}
+			\State{TimerHash.\textbf{remove}($T$)}
 			\If{TTLHash[$T_{ttl}$] is empty}
 				\State{TTLHash.\textbf{remove}[$ttl$]}
 			\EndIf
 		\EndFunction
-		
+
 	\end{algorithmic}
 \end{algorithm}
 
+Note the $closest\ expiration$ guard in \textit{PerTickBookkeeping}: a tick on which nothing is due returns in $O(1)$ without scanning the buckets. This empty-tick fast path is important in practice, because most ticks expire nothing.
+
+\subsection{Two Implementations: Reference Lawn and Lawn2}
+\label{sec:impls}
+The same algorithm admits two C implementations. They produce identical expiry schedules (verified by a differential test in Section~\ref{sec:eval}) and differ only in who owns the timer node and how a timer is addressed for cancellation.
+
+\emph{Reference Lawn} favors readability and key addressing. The store owns each timer node, copies the client's key, and indexes the timers in a hash map, so a timer can be cancelled by an arbitrary opaque key. That convenience costs one node allocation, one key copy, and two hash-map operations per insertion, which makes the reference implementation slower and heavier than a production timing wheel (Section~\ref{sec:eval}). We present it as the direct expression of the algorithm.
+
+\emph{Lawn2} keeps the algorithm but removes the per-operation allocation. Its nodes are intrusive and caller-owned (embedded in the client object), so an insertion neither allocates memory nor copies a key. Deletion is $O(1)$ through the node's own links, which lets Lawn2 drop the element-id hash map, and the TTL$\rightarrow$queue map uses open addressing with no per-entry allocation. The performance claims in this paper refer to Lawn2.
+
 \subsubsection{Correctness \& Completeness}
-%Given Timer $T$ with TTL $TTL$ that is started (using the \textit{StartTimer} operation) at time $t$,  
-To prove the algorithm's correctness, it should be demonstrated that for each Timer $t$ with TTL $ttl$,  \textit{TimerExpired} operation is called on $t$ within \textit{Tick} of $ttl$. Since the algorithm pivots around the TTL bucketing concept, wherein each timer is stored exactly once in its corresponding bucket, and these buckets are independent of each other, it is sufficient to demonstrating correctness for all timers of a bucket, That is:
+To prove correctness, we show that for each timer $t$ with TTL $ttl$, \textit{TimerExpired} is called on $t$ within one \textit{Tick} of $ttl$. Since each timer is stored exactly once in its corresponding bucket and buckets are independent, it suffices to demonstrate correctness within a bucket:
 \begin{center}
 	$\forall \quad T^{start}, T^{ttl} \in \mathbb{N} \quad \exists \quad T^{stop} \in \mathbb{N} : T^{stop}-T^{start} \approx T^{ttl}$
 \end{center}
 
-Alternatively, we can use the sorting analogy made by G. Varghese et al.\cite{TW} to show that given two triggers $T_n, T_m$: 
+Alternatively, using the sorting analogy of G. Varghese et al.\cite{TW}, given two triggers $T_n, T_m$:
 
 \begin{center}
 	$\forall \quad T_n, T_m \quad | \quad T^{start}_n<T^{start}_m,  T^{ttl}_n = T^{ttl}_m \quad \exists\quad T^{stop}_n, T^{stop}_m  \Rightarrow T^{stop}_n < T^{stop}_m$
 \end{center}
 
-Taking into account that each bucket only contains triggers with the same TTL we can simplify the above:
+Since each bucket contains only triggers with the same TTL, this simplifies to
 
 \begin{center}
 	$\forall \quad T_n, T_m \quad | \quad T^{start}_n<T^{start}_m \Rightarrow T^{stop}_n < T^{stop}_m$
 \end{center}
 
-Which, due to the bucket being a sorted set, ordered by $T^{start}$ and triggers being expired by bucket order from old to new is self-evident, and we arrived at a proof.
+which, the bucket being a sorted set ordered by $T^{start}$ and triggers being expired from old to new, is self-evident.
 
 \subsubsection{Formal Correctness Proof}
-We now present a more formal proof of Lawn's correctness. Let $T$ be a timer with TTL $ttl$ that is started at time $t_{start}$. We need to prove that $T$ is expired at time $t_{start} + ttl$.
+Let $T$ be a timer with TTL $ttl$ started at time $t_{start}$. We prove $T$ is expired at $t_{start} + ttl$. Let $Q_{ttl}$ be the queue of timers with TTL $ttl$, $t_{current}$ the current time, and $t_{expiry}=t_{start}+ttl$.
 
-Let's define the following:
-\begin{itemize}
-    \item $Q_{ttl}$: The queue of timers with TTL $ttl$
-    \item $t_{current}$: The current time
-    \item $t_{expiry}$: The time at which $T$ should expire, which is $t_{start} + ttl$
-\end{itemize}
+\textbf{Base Case}: At $t_{start}$, $T$ is inserted into $Q_{ttl}$ with $t_{expiry} = t_{start} + ttl$.
 
-We can prove correctness by induction on the number of ticks:
+\textbf{Inductive Step}: Assume at $t_{current} < t_{expiry}$ that $T$ is in $Q_{ttl}$. If $t_{current} + 1 < t_{expiry}$, then $T$ remains, as \textit{PerTickBookkeeping} only expires timers with $t_{expiry} \leq t_{current} + 1$. If $t_{current} + 1 \geq t_{expiry}$, then $T$ is expired. By induction, $T$ is expired at $t_{expiry}$.
 
-\textbf{Base Case}: At time $t_{start}$, $T$ is inserted into $Q_{ttl}$ with $t_{expiry} = t_{start} + ttl$.
-
-\textbf{Inductive Step}: Assume that at time $t_{current} < t_{expiry}$, $T$ is in $Q_{ttl}$ with $t_{expiry} = t_{start} + ttl$. We need to prove that at time $t_{current} + 1$, either $T$ is still in $Q_{ttl}$ with $t_{expiry} = t_{start} + ttl$, or $T$ has been expired.
-
-If $t_{current} + 1 < t_{expiry}$, then $T$ is still in $Q_{ttl}$ with $t_{expiry} = t_{start} + ttl$, as the PerTickBookkeeping routine only expires timers with $t_{expiry} \leq t_{current} + 1$.
-
-If $t_{current} + 1 \geq t_{expiry}$, then $T$ is expired by the PerTickBookkeeping routine, as it checks for timers with $t_{expiry} \leq t_{current} + 1$.
-
-Therefore, by induction, $T$ is expired at time $t_{expiry} = t_{start} + ttl$.
-
-\subsubsection{Amortized Analysis}
-While the worst-case complexity of the PerTickBookkeeping operation is $O(t)$, where $t$ is the number of different TTLs, we can show that the amortized complexity is much better. Let's analyze the amortized complexity using the potential method.
-
-Let $\Phi$ be a potential function that measures the "unprocessed work" in the system. We define $\Phi$ as the sum of the number of timers in each TTL bucket that are due to expire in the future:
-
-\begin{equation}
-\Phi = \sum_{ttl \in TTLHash} |\{T \in Q_{ttl} | T_{endtime} > t_{current}\}|
-\end{equation}
-
-The initial potential is 0, as there are no timers in the system. When a timer $T$ with TTL $ttl$ is inserted, the potential increases by 1, as $T$ is added to $Q_{ttl}$. When a timer $T$ is expired, the potential decreases by 1, as $T$ is removed from $Q_{ttl}$.
-
-Let's analyze the amortized cost of each operation:
-
-\textbf{StartTimer}: The actual cost is $O(1)$. The potential increases by 1. Therefore, the amortized cost is $O(1) + 1 = O(1)$.
-
-\textbf{DeleteTimer}: The actual cost is $O(1)$. The potential decreases by 1. Therefore, the amortized cost is $O(1) - 1 = O(1)$.
-
-\textbf{PerTickBookkeeping}: The actual cost is $O(t)$, where $t$ is the number of different TTLs. The potential decreases by the number of timers that are expired. Let $k$ be the number of timers that are expired. The amortized cost is $O(t) - k$.
-
-In the worst case, $k = 0$, and the amortized cost is $O(t)$. However, in practice, $k$ is often much larger than $t$, especially in systems with many timers. In the best case, $k = n$, where $n$ is the total number of timers, and the amortized cost is $O(t) - n = O(1)$ if $t$ is constant.
-
-Therefore, the amortized complexity of the PerTickBookkeeping operation is $O(1)$ if the number of different TTLs is constant, which is often the case in real-world systems.
-
-\subsubsection{Queueing Theory Analysis}
-To further analyze the performance of the Lawn algorithm, we can apply queueing theory to model the behavior of the system under different arrival patterns and TTL distributions. This analysis provides insights into the expected performance and stability of the algorithm in real-world scenarios.
-
-\paragraph{M/M/1 Queue Model}
-We can model each TTL bucket as an M/M/1 queue, where:
-\begin{itemize}
-    \item The arrival process is Poisson with rate $\lambda_{ttl}$ for TTL $ttl$
-    \item The service time is exponentially distributed with rate $\mu_{ttl}$ for TTL $ttl$
-    \item There is a single server (the PerTickBookkeeping routine)
-\end{itemize}
-
-Under this model, the expected number of timers in the system for TTL $ttl$ is:
-\begin{equation}
-E[N_{ttl}] = \frac{\lambda_{ttl}}{\mu_{ttl} - \lambda_{ttl}}
-\end{equation}
-
-And the expected waiting time is:
-\begin{equation}
-E[W_{ttl}] = \frac{1}{\mu_{ttl} - \lambda_{ttl}}
-\end{equation}
-
-\paragraph{Batch Processing Model}
-In reality, the PerTickBookkeeping routine processes timers in batches, which can be modeled as a batch processing queue. Let $B$ be the batch size, which is the number of timers processed in a single tick. The expected waiting time under this model is:
-\begin{equation}
-E[W_{ttl}] = \frac{B}{2\mu_{ttl}} + \frac{1}{\mu_{ttl} - \lambda_{ttl}}
-\end{equation}
-
-\paragraph{TTL Distribution Impact}
-The performance of the Lawn algorithm depends heavily on the distribution of TTLs. If the TTLs are drawn from a small set of values, then the number of TTL buckets $t$ is small, and the PerTickBookkeeping operation is efficient. If the TTLs are drawn from a large set of values, then $t$ is large, and the PerTickBookkeeping operation becomes less efficient.
-
-Let's model the TTL distribution as a discrete probability distribution $P(ttl)$ over a set of TTL values $TTL$. The expected number of TTL buckets is:
-\begin{equation}
-E[t] = |TTL|
-\end{equation}
-
-And the expected number of timers per TTL bucket is:
-\begin{equation}
-E[N_{ttl}] = \frac{n}{|TTL|}
-\end{equation}
-
-where $n$ is the total number of timers in the system.
-
-\paragraph{Stability Analysis}
-The system is stable if the arrival rate is less than the service rate for each TTL bucket:
-\begin{equation}
-\lambda_{ttl} < \mu_{ttl} \quad \forall ttl \in TTL
-\end{equation}
-
-In practice, this means that the number of timers with a given TTL that expire in a single tick should be less than the number of timers that can be processed in a single tick. This is typically the case, as the TTL is usually much larger than the tick interval.
-
-\paragraph{Performance Bounds}
-Based on the queueing theory analysis, we can derive performance bounds for the Lawn algorithm:
-
-\begin{itemize}
-    \item \textbf{Expected Latency}: The expected latency of a timer with TTL $ttl$ is $E[W_{ttl}]$, which is bounded by $\frac{B}{2\mu_{ttl}} + \frac{1}{\mu_{ttl} - \lambda_{ttl}}$.
-    
-    \item \textbf{Expected Throughput}: The expected throughput of the system is $\sum_{ttl \in TTL} \lambda_{ttl}$, which is bounded by $\sum_{ttl \in TTL} \mu_{ttl}$.
-    
-    \item \textbf{Expected Memory Usage}: The expected memory usage of the system is $O(n)$, where $n$ is the total number of timers in the system.
-\end{itemize}
-
-These bounds provide a theoretical foundation for the performance characteristics of the Lawn algorithm and can be used to guide the design and optimization of timer facilities in large-scale systems.
-
-\subsubsection{Space and Runtime Complexity}
-The Lawn data structure is dense by design, as every timer is stored exactly once, a new trigger will add at most a single TTL bucket and empty TTL buckets are always removed, the data structure footprint will only grow linearly with the number of timers. Hence, overall space complexity is linear to the number of timers ($O(n)$). 
+\subsubsection{Complexity}
+The Lawn data structure is dense by design: every timer is stored exactly once, a new trigger adds at most one TTL bucket, and empty buckets are removed. The footprint therefore grows linearly with the number of timers, so space is $O(n)$ (confirmed empirically in Section~\ref{sec:eval}).
 
 \complexity{Worst}{Mean}{1}{1}{n}{t\sim1}{1}{1}{the Lawn scheme}
 
-Since the \textit{PerTickBookkeeping} routine of Lawn iterates over the top item of all known TTL buckets on every expiration cycle (where at least one timer is expected to expire), it's mean case runtime is linear to $t$ (the number of different TTLs) and seems to be lacking even in comparison to more primitive implementations of timer storage. That said, with an added assumption that the TTL set size is roughly constant over time, or at worst asymptotically smaller then the number of timers, we can regard this operation as constant time.
+\textit{StartTimer} and \textit{DeleteTimer} are $O(1)$ amortized. The worst case is $O(n)$ on a hash-map/table resize, as is standard for hash-based structures (visible in the tail of the measured insert latency). An empty tick is $O(1)$ via the $closest\ expiration$ guard. A tick that does expire timers scans the head of each of the $t$ live TTL buckets, so its cost is $O(t + k)$ for $k$ expired timers, with a worst case of $O(n)$ (all timers due in one tick). When $t$ is bounded (i.e. $t = O(1)$, the assumption of Section~4.A), the per-tick cost is $O(1)$. Otherwise it is $O(t)$ and Lawn is worse than a wheel. This dependence on $t$ is the algorithm's defining trade-off and is measured directly in Section~\ref{sec:eval}.
 
-This assumption is valid in our case as it is derived from the needs of the algorithm users, these being other computer systems, which often have either a single TTL used repeatedly, their TTLs are chosen from a list of hard-coded values or derived from a simple mathematical operation (sliding windows are a good example of this method, using fixed increments or powers of 2 to determine TTLs etc.). Computer systems which are using highly variable TTL values are suitable for usage with this timer algorithm only under specific circumstances (such as multi-worker expiration system as described below).
+\paragraph{Space} is $O(n)$: at worst each timer occupies its own bucket plus a single hash entry. Theoretically this footprint is bounded above by that of the Hashed Hierarchical Timing Wheel, whose multi-level structure can point at a single timer through a chain of wheels. We did not measure a hierarchical wheel directly. Against the single/tickless wheel we benchmarked, Lawn2 uses less memory but the reference Lawn uses more (Section~\ref{sec:eval}).
 
-\paragraph{Space complexity} is $O(n)$ since at worst case each timer is stored in its own bucket alongside a single entry in the timer hash. To compare, this spatial footprint is bound from above by that of the Hashed Hierarchical Timing Wheel, as due to it's multi-level structure a single timer can be pointed at by a chain of hierarchical "wheels", increasing its overall space requirement.
+\subsubsection{Queueing Theory Sketch}
+Modeling each TTL bucket as an M/M/1 queue with Poisson arrivals (rate $\lambda_{ttl}$) and a single server (\textit{PerTickBookkeeping}) gives the standard $E[N_{ttl}] = \lambda_{ttl}/(\mu_{ttl} - \lambda_{ttl})$ and $E[W_{ttl}] = 1/(\mu_{ttl} - \lambda_{ttl})$, with a batch-processing correction $E[W_{ttl}] = B/(2\mu_{ttl}) + 1/(\mu_{ttl} - \lambda_{ttl})$. We stress that M/M/1 assumes memoryless (exponential) service, whereas a Lawn timer's expiry is deterministic (a fixed discrete TTL), so a deterministic-service M/D/1 model is a better fit and yields smaller waiting times. These bounds are modeling sketches and are \emph{not} empirically validated here. The system is stable when $\lambda_{ttl} < \mu_{ttl}$ for every bucket. The $O(n)$ space bound, by contrast, is measured (Section~\ref{sec:eval}).
 
-\subsection{Memory Access Patterns and Cache Behavior}
-The memory access patterns of Lawn differ significantly from those of Timer Wheel, with important implications for cache utilization and overall performance. 
-
-\subsubsection{Memory Layout}
-As opposed to Timer Wheel, Lawn organizes timers by TTL value rather than by expiration time. This organization creates a natural grouping of timers with similar TTLs, which can lead to better cache locality when processing timers with the same TTL. Each TTL bucket is implemented as a queue, which typically results in sequential memory access patterns when processing timers within a bucket.
-
-The TimerHash provides O(1) lookups for timer operations, but introduces additional memory indirection. However, this indirection is necessary for efficient timer deletion and is a common pattern in timer implementations (as is the case with the Hashed Hierarchical Timing Wheel\cite{TW}).
-
-\subsubsection{Cache Behavior}
-Our benchmark results show that both Lawn and Timer Wheel implementations have similar cache hit rates at various scales. However, the memory access patterns of Lawn can be more predictable and potentially more cache-friendly in certain scenarios:
-
-\begin{itemize}
-    \item \textbf{Sequential Access and Memory Locality}: When processing timers within a TTL bucket due to the existence of a large number of timers with the same TTL expiring at once (the worst case scenario for both Lawn and Timer Wheel), Lawn exhibits sequential memory access patterns, which are generally more cache-friendly than the potentially random access patterns of Timer Wheel (especially if some of the timers are to be expired in a future pass of the wheel when using the multi-pass approach).
-    
-    \item \textbf{Memory Fragmentation}: The Timer Wheel's fixed-size buckets can lead to memory fragmentation when buckets are underutilized. Lawn's dynamic bucket allocation can be more memory-efficient in scenarios with varying TTL distributions.
-\end{itemize}
-
-\subsubsection{Memory Management}
-The Lawn implementation can benefit from several memory management optimizations:
-
-\begin{itemize}
-    \item \textbf{Object Pooling}: Pre-allocating timer objects can reduce memory allocation overhead and improve cache locality.
-    
-    \item \textbf{Cache-Aligned Structures}: Aligning timer objects and bucket headers to cache line boundaries can reduce false sharing in multi-threaded environments.
-    
-    \item \textbf{Memory Pre-allocation}: Pre-allocating memory for TTL buckets based on expected TTL distribution can reduce memory allocation overhead during operation.
-\end{itemize}
+\subsection{Memory Access Patterns}
+Lawn organizes timers by TTL value rather than expiration time, creating a natural grouping of timers with the same TTL. Each bucket is a queue, giving sequential access when a bucket is drained. The timer index provides $O(1)$ lookups at the cost of one indirection, a common pattern also used by the Hashed Hierarchical Timing Wheel\cite{TW}. We did not instrument cache behavior with hardware counters, so we make no measured cache-locality or fragmentation claim. The memory results in Section~\ref{sec:eval} are footprint measurements only. Lawn2 further reduces overhead by embedding nodes in client objects (object pooling by construction) and by avoiding per-entry allocation in its TTL table.
 
 \subsection{Concurrency Considerations}
-The Lawn data structure's organization by TTL rather than by expiration time has important implications for concurrent implementations.
-
-\subsubsection{Lock-Free Operations}
-The independence of TTL buckets in Lawn enables lock-free or low-contention concurrent implementations. Each TTL bucket can be protected by its own lock, allowing concurrent access to different buckets. This approach minimizes contention compared to Timer Wheel, which may require locking the entire wheel structure. However, TTL buckets can be implemented using lock-free queue algorithms, further reducing contention in high-concurrency scenarios. Moreover, RCU can be used to allow concurrent reads while updates are performed atomically, eliminating the need for locks in read-heavy workloads.
-
-\subsubsection{Distributed and Worker-Based Processing}
-The Lawn algorithm naturally supports a distributed and worker-based processing model, where different workers can process different TTL buckets concurrently. This is achieved by assigning each worker a specific range of TTL buckets based on their hash value or a modulo operation (e.g on the NUMA node ID of the worker). This approach ensures even distribution of work and minimal contention between workers, even under dynamic load balancing scenarios, where the number of workers is changing on the fly.  
-
-\subsubsection{Concurrent Benchmark Results}
-Our benchmark results for concurrent operations show that Lawn significantly outperforms Timer Wheel in high-concurrency scenarios:
-
-\begin{itemize}
-    \item \textbf{Mean Latency}: Lawn's mean latency for concurrent operations is approximately 50 times lower than Timer Wheel's (0.00024s vs. 0.0121s).
-    
-    \item \textbf{Standard Deviation}: Lawn's standard deviation is also significantly lower (0.0009s vs. 0.0415s), indicating more consistent performance under concurrent load.
-    
-    \item \textbf{Scalability}: Lawn's performance scales better with increasing concurrency, making it more suitable for high-throughput, multi-threaded applications.
-\end{itemize}
-
-\subsection{NUMA Considerations}
-Non-Uniform Memory Access (NUMA) architectures present unique challenges for timer implementations, as memory access latency varies depending on the physical location of memory relative to the accessing CPU. Lawn's design allows for easy optimization for NUMA architectures, as the independence of TTL buckets allows for easy assignment of buckets to workers based on NUMA node affinity, further reducing cache locality issues and cross-node memory access and improving performance.
-
-\subsubsection{NUMA Benchmark Results}
-Our benchmark results for NUMA-aware implementations show that Lawn significantly outperforms Timer Wheel in NUMA environments:
-
-\begin{itemize}
-    \item \textbf{Mean Latency}: Lawn's mean latency in NUMA environments is approximately 105 times lower than Timer Wheel's (0.00024s vs. 0.0256s).
-    
-    \item \textbf{Standard Deviation}: Lawn's standard deviation is also significantly lower (0.0000043s vs. 0.0000172s), indicating more consistent performance in NUMA environments.
-    
-    \item \textbf{Scalability}: Lawn's performance scales better with increasing NUMA node count, making it more suitable for large-scale, NUMA-based systems.
-\end{itemize}
+\label{sec:concurrency}
+Because TTL buckets are independent, a Lawn can be partitioned across workers, threads, or machines by bucket, and a partitioned deployment needs no synchronization \emph{across} buckets. We evaluate this honestly in Section~\ref{sec:eval}: on a single multi-core machine, wrapping each partition in its own lock, Lawn2 keeps a modest throughput edge over the wheel but no implementation scales up with thread count under coarse locking. We did not implement a lock-free or per-bucket-lock timer. A genuinely concurrent Lawn is left as future work, and we make no lock-free superiority claim.
 
 \section{Comparison and Reflection}
-While general use systems, aggregating timers from several sources with, or applications with highly predictable needs may benefit from the relative stability of run-time provided by Timing Wheel (let alone the fact that it has been shown to be an optimal solution in terms of run-time complexity) Large scale machine serving systems would suffer from the overflow problem when faced with unpredictable scale of usage. This is handled in Lawn by a "slow and steady" approach, optimizing for specific use cases.
-
-Designed for large scale, high throughput systems, Lawn has displayed beyond state of the art performance for systems complying with its core assumptions of a multi-worker, hi-frequency, hi-timer-count with low TTL variance applications.
+General-purpose systems, or applications with highly predictable needs, may prefer the stable run-time of the Timing Wheel (which is asymptotically optimal). Large-scale serving systems, however, suffer from the overflow problem under unpredictable usage. Lawn trades a dependence on the distinct-TTL count for an unbounded span with no rebuilds. It is competitive with, and often faster than, the state of the art \emph{only within its assumed regime} of low TTL variance (Section~\ref{sec:eval}). It is not a universal improvement.
 
 \begin{table}[ht]
 	\begin{center}
 		\begin{tabular}{l|c|c|c}
-			%& \multicolumn{2}{c}{\textbf{Case}} \\
 			\textbf{Operation} & \textbf{TW (Resize)} & \textbf{TW (Multi-Pass)} & \textbf{Lawn} \\
 			\hline
-			\textit{StartTimer} & \boldmath{$O(n)$}\footnote{\label{overflowfn}on overflow, else O(1)} & $O(1)$ & $O(1)$ \\
-			\textit{PerTick} & $O(1)$ & $O(1)$ & \boldmath{$O(t\sim1)$} \\
-			\textit{DeleteTimer} & $O(1)$ & $O(1)$ & $O(1)$ \\
-			\textit{TimerExpired} & $O(1)$ & \boldmath{$O(n)$}\footnote{see footnote \ref{overflowfn}} & $O(1)$ \\
+			\textit{StartTimer} & \boldmath{$O(n)$}\textsuperscript{$\ast$} & $O(1)$ & $O(1)$\textsuperscript{$\dagger$} \\
+			\textit{PerTick} & $O(1)$ & \boldmath{$O(n)$}\textsuperscript{$\ddagger$} & \boldmath{$O(t)$}\textsuperscript{$\S$} \\
+			\textit{DeleteTimer} & $O(1)$ & $O(1)$ & $O(1)$\textsuperscript{$\dagger$} \\
+			\textit{TimerExpired} & $O(1)$ & $O(1)$ & $O(1)$ \\
 			\textit{space} & $O(n)$ & $O(n)$ & $O(n)$ \\
 		\end{tabular}
 		\linebreak
-		\caption{Runtime Complexity comparison}
+		{\footnotesize\raggedright $\ast$\,on overflow, otherwise amortized $O(1)$.\quad $\dagger$\,amortized, worst case $O(n)$ on a resize.\quad $\ddagger$\,worst case, from the multi-pass cascade.\quad $\S$\,$O(1)$ empty tick and mean when $t=O(1)$, $O(n)$ worst case.\par}
+			\caption{Runtime complexity comparison. The Multi-Pass $O(n)$ penalty falls on \textit{PerTick} (the cascade), consistent with Alg.~\ref{alg:overflow_inplace}.}
 	\end{center}
 \end{table}
 
 \section{Limitations}
-While Lawn offers significant advantages in many scenarios, it is important to acknowledge its limitations compared to hierarchical timer wheel implementations. Understanding these limitations is crucial for making informed decisions about which timer algorithm to use in specific applications.
+\label{sec:limitations}
+Lawn's advantages are conditional, so understanding the limits is essential to choosing it.
 
 \subsection{TTL Distribution Sensitivity}
-Lawn's performance is highly dependent on the distribution of TTL values. In scenarios where TTLs are drawn from a continuous or highly variable distribution, Lawn's performance can degrade significantly. When TTLs are drawn from a continuous distribution, the number of TTL buckets $t$ can grow large, approaching the number of timers $n$. In this case, the PerTickBookkeeping operation's complexity approaches $O(n)$, making it less efficient than hierarchical timer wheel implementations.
+Lawn's performance depends directly on the distribution of TTL values. When TTLs are drawn from a continuous or highly variable distribution, the number of buckets $t$ grows toward the number of timers $n$, and \textit{PerTickBookkeeping} approaches $O(n)$. Section~\ref{sec:eval} measures the crossover: Lawn2 loses to the wheel once the distinct-TTL fraction $t/N$ exceeds roughly 0.9--4.6\% (tightening as $N$ grows), and is up to two orders of magnitude slower when nearly every timer has a distinct TTL.
 
-\subsection{Memory Overhead for Small TTL Sets}
-While Lawn's memory usage is generally efficient, it can have higher memory overhead compared to hierarchical timer wheel in scenarios with a small number of timers but a large number of different TTL values, as each TTL bucket requires additional memory for management structures, which can become significant when the number of TTL values is large but the number of timers per bucket is small.
+\subsection{Memory Overhead for Small Timer Counts}
+At small scale, Lawn2's fixed per-structure overhead dominates: at one thousand timers it uses more memory per timer than the wheel, and the advantage appears only at scale (Section~\ref{sec:eval}).
 
-\subsection{Time Granularity Limitations}
-Hierarchical timer wheel implementations offer more flexibility in terms of time granularity as hierarchical timer wheel can handle variable tick intervals more naturally, as each level of the hierarchy can operate at a different granularity. Hence,for applications requiring very fine-grained control over timer expiration (e.g., microsecond-level precision), hierarchical timer wheel may provide better support. 
-
-\subsection{Implementation Complexity}
-While Lawn's core algorithm is simple, implementing it efficiently in all scenarios can be challenging. The mixture of a hash table and a priority queue in the implementation can be tricky to get right, and the implementation details can have a significant impact on performance, especially when implementing for a distributed system. Memory management can also be a challenge, as the data structure is dense and requires careful attention to avoid cache misses and false sharing.
-
-\subsection{Integration with Existing Systems}
-Hierarchical timer wheel implementations may be easier to integrate with existing systems:
-
-\begin{itemize}
-    \item \textbf{API Compatibility}: Many existing systems are designed with hierarchical timer wheel in mind, making integration potentially simpler.
-    
-    \item \textbf{Debugging and Monitoring}: The hierarchical structure of timer wheel can make debugging and monitoring more straightforward in some cases, as the time-based organization provides a natural way to visualize timer expiration.
-\end{itemize}
-
-Despite these limitations, Lawn remains a highly effective solution for many real-world scenarios, particularly in large-scale systems with predictable TTL distributions. The key is to understand these limitations and choose the appropriate timer algorithm based on the specific requirements and characteristics of the application.
+\subsection{Time Granularity and Implementation Complexity}
+Hierarchical wheels handle variable tick granularity more naturally, level by level, which may suit applications needing very fine-grained precision. Lawn's mixture of a hash table and per-bucket queues is simple in concept but requires care to implement efficiently (dense layout, avoiding cache misses), especially in a distributed setting.
 
 \section{Experimental Evaluation}
-To validate the theoretical analysis and compare the performance of Lawn with Timer Wheel implementations, we conducted a comprehensive experimental evaluation across various workloads and system configurations.
+\label{sec:eval}
+We validate the analysis and compare Lawn against timing-wheel baselines.
 
 \subsection{Methodology}
-We implemented both Lawn and Timer Wheel algorithms both in Python and C using standard library data structures (naive implementations utilizing the same data underlying data structures).
+We benchmark four C implementations behind one interface: the reference \textbf{Lawn} (\texttt{src/lawn.c}), the optimized \textbf{Lawn2} (\texttt{src/lawn2.c}), \textbf{Timer Wheel} (William Ahern's tickless hierarchical wheel~\cite{TWI}, used as the production baseline), and a \textbf{Naive} single-level growing ring. All run on an \emph{integer logical clock}, so timing is deterministic and wall-clock-free. A differential correctness gate is run first: all four implementations must produce byte-identical per-tick expiry schedules (with and without deletions, and for large TTLs that force cascades) before any number is trusted. They do.
 
-Our benchmark suite measures the following metrics:
-\begin{itemize}
-    \item \textbf{Insertion Latency}: Time to insert a timer
-    \item \textbf{Deletion Latency}: Time to delete a timer
-    \item \textbf{Tick Processing Time}: Time to process a tick
-    \item \textbf{Memory Usage}: Memory footprint of the data structure
-    \item \textbf{Concurrency Performance}: Performance under concurrent access
-    \item \textbf{NUMA Performance}: Performance in NUMA environments
-    \item \textbf{Stability}: Long-running performance and latency distribution
-\end{itemize}
+Each operation is timed with the finest monotonic clock available (\texttt{CLOCK\_UPTIME\_RAW}, $\sim$41\,ns quantized on the test machine), so sub-40\,ns operations are timed in micro-batches of 256 to lift them off the clock floor. Measurements use fixed seeds (base 1234) with 7 runs and 2 warmup runs (3/1 at the largest scale). The C results below are authoritative for absolute cost and cross-implementation ranking. We also maintain a Python suite. It is useful for confirming \emph{scaling shape}, but its absolute numbers carry interpreter overhead and invert the insert ranking, so we do not cite Python numbers here. Hardware: Apple M4 Pro (12 cores, 8 performance + 4 efficiency), macOS 26.3, Apple clang 21.
 
 \subsection{Basic Operations}
-We first evaluated the basic operations (insertion, deletion, tick) across different scales, from 100 to 10,000,000 timers.
+We evaluate insertion, deletion, and the two tick paths across scales of one thousand to one million timers.
 
-\subsubsection{Insertion Performance}
-Figure \ref{fig:insertion} shows the insertion latency for both Lawn and Timer Wheel implementations across different scales. The results show that both implementations have similar insertion performance, with Lawn slightly outperforming Timer Wheel at larger scales.
+Naive wins several of the metrics below, which is worth explaining once before the operation-by-operation results, rather than as a series of isolated asides. Naive is a single-level ring sized to the largest TTL it currently holds: while that span stays small, insertion, an empty tick, and expiry all resolve to one direct array index, with no bucket scan and no cascade. Every benchmark in this subsection holds the span small by construction: the operation baselines fix a TTL span of 2\,560 ticks, and the expiry test narrows it further to a 200-tick window. Under that condition naive has no bucket-scan or cascade cost to pay at all, so it is not merely competitive, it is the fastest structure measured.
+
+That condition is exactly what Figure~\ref{fig:overflow} varies, and it is exactly where naive fails. Once the TTL span is not known in advance and grows, naive's ring must grow to cover it, which means rehashing every live timer into the larger ring: an $O(n)$ cost of the same kind as the wheel-resize overflow algorithm (Algorithm~\ref{alg:overflow_resize}). The tickless wheel avoids that rehash by paying a bounded cascade cost instead, visible in Figure~\ref{fig:extendedtick} as the wheel's own cost growing with scale, and Lawn/Lawn2 avoid it entirely by bucketing on TTL value rather than absolute time. Naive is included as the textbook overflow victim, not as a production candidate: unlike the tickless wheel, a deployed library used as the production baseline throughout this paper, naive exists specifically to make the overflow problem visible. Read the results below accordingly: naive wins wherever the TTL span is small and bounded in advance, and loses precisely when that assumption breaks, which is the condition this paper is about.
+
+\subsubsection{Insertion}
+Figure \ref{fig:insertion} shows insertion latency. Lawn2 is comparable to the wheel at ten thousand timers and about 1.4 to 1.9 times faster at scale (5.8\,ns vs. 8.5\,ns at one million, and 4.1\,ns vs. 7.9\,ns at one hundred thousand). The unsorted \textbf{naive} ring is fastest of all ($\sim$2.4\,ns), and the \emph{reference} Lawn is slower ($\sim$88\,ns at one million, from its per-insert allocation and key copy), which is why the performance claims use Lawn2.
 
 \begin{figure}[ht]
 	\centering
 	\includegraphics[width=0.9\linewidth]{insertion.png}
-	\caption{Insertion latency across different scales}
+	\caption{Insertion latency across scales (C, ns).}
 	\label{fig:insertion}
 \end{figure}
 
-\subsubsection{Deletion Performance}
-Figure \ref{fig:deletion} shows the deletion latency for both implementations. The results show that Lawn consistently outperforms Timer Wheel, with the performance gap increasing at larger scales.
+\subsubsection{Deletion}
+Figure \ref{fig:deletion} shows deletion latency. Lawn2 is consistently about 3.1 to 3.6 times faster than the wheel (40.7\,ns vs. 127.7\,ns at one million, and 4.9\,ns vs. 17.3\,ns at one hundred thousand), the ratio roughly constant so the absolute gap grows with scale.
 
 \begin{figure}[ht]
 	\centering
 	\includegraphics[width=0.9\linewidth]{deletion.png}
-	\caption{Deletion latency across different scales}
+	\caption{Deletion latency across scales (C, ns).}
 	\label{fig:deletion}
 \end{figure}
 
-\subsubsection{Tick Processing Performance}
-Figure \ref{fig:tick} shows the tick processing time for both implementations. The results show that Lawn significantly outperforms Timer Wheel, with the performance gap increasing dramatically at larger scales. At 1,000,000 timers, Lawn's tick processing time is approximately 15 times lower than Timer Wheel's.
+\subsubsection{Expiry cost}
+Figure \ref{fig:expiry} shows the cost of a tick that drains due timers, the operation that does the actual work of firing callbacks, using a fixed 200-tick window so every timer is due within it regardless of scale. Lawn2 is about 2.2 times faster than the wheel at one million timers (408\,$\mu$s vs. 884\,$\mu$s): both must inspect every live TTL bucket or wheel level on a draining tick, and Lawn2 does so more cheaply. The naive ring pays no such inspection: it drains its due slot by direct index and so dominates both here ($\sim$6.3\,$\mu$s), for the reason given above.
 
 \begin{figure}[ht]
 	\centering
-	\includegraphics[width=0.9\linewidth]{tick.png}
-	\caption{Tick processing time across different scales}
-	\label{fig:tick}
+	\includegraphics[width=0.9\linewidth]{expiry.png}
+	\caption{Per-tick expiry latency across scales (C, ns).}
+	\label{fig:expiry}
 \end{figure}
 
+\subsubsection{Empty-tick (bookkeeping) cost}
+A tick on which nothing is due does no useful work by itself, but its cost still matters because it runs on every clock tick regardless of load, so a per-tick tax here is paid continuously rather than only when timers actually fire. Lawn2 is flat at $O(1)$ ($\sim$1\,ns) at every scale, while the tickless wheel pays a cascade cost that grows to $\sim$12.9\,$\mu$s at one million timers (with high variance), more than four orders of magnitude higher. This is the empirical form of the overflow problem: the wheel does work proportional to elapsed time and level structure, Lawn does not. The same gap, and its continuation far past one million timers, is visualized directly in Figures~\ref{fig:extendedtick} and~\ref{fig:densityvsn} in Section~\ref{sec:extended-scale}: Lawn2 stays at $\sim$1\,ns independent of $t$ (the $closest\ expiration$ guard) at every scale tested, while the wheel's cascade cost is unrelated to $t$ and grows with $N$.
+
 \subsection{Memory Usage}
-Figure \ref{fig:memory} shows the memory usage for both implementations across different scales. The results show that both implementations have similar memory usage at smaller scales, but Lawn's memory usage grows more slowly at larger scales.
+Figure \ref{fig:memory} shows per-timer memory at a fixed, modest TTL span of 2\,560 ticks. At scale Lawn2 uses about 40 bytes per timer versus the wheel's about 88 (2.2 times less), and grows more slowly. At one thousand timers Lawn2 is heavier (fixed overhead). The reference Lawn uses more than the wheel ($\sim$113 bytes) at scale. The naive ring is lightest of all here ($\sim$38 bytes per timer): its cost at this fixed span is just per-timer bookkeeping plus an amortized, doubling array. Figure \ref{fig:overflow} shows what happens once the span is not fixed: total memory against TTL span growing a thousandfold, at both the main one hundred thousand-timer baseline and the ten million-timer baseline from Section~\ref{sec:extended-scale}. Lawn, Lawn2, and the tickless wheel are flat at both baselines, while the naive single-level ring grows, the overflow rehash described above, 4.2\,MB to 12.2\,MB at one hundred thousand timers and 507.5\,MB to 513.8\,MB at ten million. Section~\ref{sec:extended-scale} shows this same growth normalized to each baseline's own starting point (Figure~\ref{fig:naiveoverflowscale}): in relative terms the overflow effect is far weaker at the larger baseline, 2.9 times growth versus 1.2\,\%.
 
 \begin{figure}[ht]
 	\centering
 	\includegraphics[width=0.9\linewidth]{memory.png}
-	\caption{Memory usage across different scales}
+	\caption{Memory per timer across scales (C, bytes).}
 	\label{fig:memory}
 \end{figure}
 
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{overflow.png}
+	\caption{Total memory vs. TTL span at two baselines, one hundred thousand and ten million timers (C, bytes, lower is better). The naive ring overflows at both while Lawn, Lawn2, and the wheel stay flat.}
+	\label{fig:overflow}
+\end{figure}
+
 \subsection{Workload Characterization}
-We evaluated both implementations under different workload patterns:
-
-\subsubsection{Fixed TTL Workload}
-In this workload, all timers have the same TTL value. This workload is ideal for Lawn, as it can leverage the TTL bucketing to minimize processing overhead.
-
+We measure per-tick expiry cost at one hundred thousand timers under different TTL distributions (Lawn2 vs. the wheel):
 \begin{itemize}
-    \item \textbf{Lawn}: Mean latency of 0.00029s with standard deviation of 0.00160s
-    \item \textbf{Timer Wheel}: Mean latency of 0.00156s with standard deviation of 0.01251s
+    \item \textbf{Single TTL} (all timers share one TTL): 429\,ns vs. 11{,}552\,ns ($\sim$27x).
+    \item \textbf{Few TTLs} (ten distinct values): 2{,}780\,ns vs. 17{,}206\,ns ($\sim$6.2x).
+    \item \textbf{Bursty arrivals}: 1{,}482\,ns vs. 11{,}384\,ns ($\sim$7.7x).
+    \item \textbf{Uniform}: 3{,}770\,ns vs. 18{,}434\,ns ($\sim$4.9x).
 \end{itemize}
+Lawn2 is faster on expiry across all of these. The advantage is largest when TTLs cluster, as expected. Figure \ref{fig:workloadexpiry} shows the same comparison directly.
 
-\subsubsection{Mixed TTL Workload}
-In this workload, timers have TTLs drawn from a small set of values (10 different TTLs). This workload is still favorable for Lawn, but less so than the fixed TTL workload.
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{workload_expiry.png}
+	\caption{Per-tick expiry latency, Lawn2 vs. the wheel, under four realistic TTL distributions (C, ns, lower is better).}
+	\label{fig:workloadexpiry}
+\end{figure}
 
-\begin{itemize}
-    \item \textbf{Lawn}: Mean latency of 0.00016s with standard deviation of 0.00054s
-    \item \textbf{Timer Wheel}: Mean latency of 0.00292s with standard deviation of 0.01883s
-\end{itemize}
+\subsection{The Distinct-TTL / Timer-Count Crossover}
+The central caveat of the paper is measured directly in Figure \ref{fig:inflection}, which plots Lawn2's full-lifecycle speedup over the wheel (Wheel cost divided by Lawn2 cost) as the distinct-TTL fraction $t/N$ varies. Lawn2 wins (speedup above one) while $t/N$ is small, and crosses over to losing at $t/N \approx 4.6\%$ ($N=10^4$), $1.5\%$ ($N=10^5$), and $0.9\%$ ($N=10^6$). The boundary tightens as $N$ grows. When nearly every timer has a distinct TTL ($t/N=1$), Lawn2 is up to about 349 times slower than the wheel. This is the honest boundary of applicability: Lawn is a win precisely when distinct TTLs stay well under a few percent of live timers. In absolute terms this is more permissive than the percentage suggests: at $N=10^4$ the boundary is about 460 distinct TTLs, at $N=10^5$ about 1\,500, and at $N=10^6$ about 9\,000, comfortably within the range of a configuration-driven or otherwise bounded TTL set at large scale rather than a handful of values. We additionally swept $N=10^7$ across the same distinct-TTL range. Lawn2 wins throughout it, but that range only reaches $t/N=0.1\%$, below where the tightening trend above predicts the $N=10^7$ crossover actually falls, so this point confirms the low-$t/N$ region holds at larger $N$ without locating where the boundary now sits. We flag this as a gap rather than claim the crossover has vanished at this scale. Section~\ref{sec:extended-scale} finds a second, independent failure mode of the wheel at far larger $N$, driven by absolute timer count rather than distinct-TTL count, which we defer there to keep this boundary specific to the axis it measures.
 
-\subsubsection{Burst Workload}
-In this workload, timers are created in bursts, simulating high-load periods. This workload tests the ability of both implementations to handle sudden increases in load. In this case, Lawn outperforms Timer Wheel due to its memory locality advantage.
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{inflection.png}
+	\caption{Lifecycle speedup of Lawn2 over the Timer Wheel vs. the distinct-TTL fraction t/N (C). Higher means Lawn2 wins by more.}
+	\label{fig:inflection}
+\end{figure}
 
-\begin{itemize}
-    \item \textbf{Lawn}: Mean latency of 0.00012s with standard deviation of 0.00058s
-    \item \textbf{Timer Wheel}: Mean latency of 0.00188s with standard deviation of 0.01404s
-\end{itemize}
+\subsection{Robustness at Extended Scale}
+\label{sec:extended-scale}
+The results above cover one thousand to one million timers, matching the paper's main methodology. To check that the core claims are not artifacts of that range, we separately swept timer counts far beyond it, at a fixed distinct-TTL count of ten thousand (denser than the main baseline of one hundred), stopping each implementation at the largest count that fit in memory on the 24\,GB test machine: Lawn2 to 150 million, the naive ring to 190 million, the tickless wheel to 118 million, and reference Lawn to 100 million. This is a single-machine check, not a repeated statistical study, so we report it separately from the main results and state only what is unambiguous in the data.
 
-\subsubsection{Uniform Workload}
-In this workload, timers have TTLs drawn from a uniform distribution. This workload is less favorable for Lawn, as it cannot leverage TTL bucketing as effectively. However, the performance of both implementations is still comparable.
+Lawn2's insert, empty-tick, and memory costs stay flat across the entire extended range with no exception. Insert is 6.7\,ns at one million timers and 6.5\,ns at 150 million. The empty tick is 1.8\,ns at one million and 1.5\,ns at 150 million. Memory is 40.7\,B/timer at one million, converging to 40.0\,B/timer by ten million and holding there, with zero measured variance, through 150 million. Figure \ref{fig:extendedmemory} shows this holds for every implementation tested, not just Lawn2: per-timer memory is flat out to hundreds of millions of timers across the board, in contrast to the scale-driven empty-tick cost below, which is specific to the wheel. The tickless wheel's empty-tick cost, in contrast, keeps growing with absolute timer count well past the one-million-timer range covered above: 8.5\,$\mu$s at one million, 87.9\,$\mu$s at ten million, 429.6\,$\mu$s at one hundred million, and 510.6\,$\mu$s at 118 million. The crossover documented in Figure \ref{fig:inflection} is therefore not a small-scale artifact: the wheel's cost continues to grow with absolute timer count at every scale we could test.
 
-\begin{itemize}
-    \item \textbf{Lawn}: Mean latency of 0.01102s with standard deviation of 0.00152s
-    \item \textbf{Timer Wheel}: Mean latency of 0.02553s with standard deviation of 0.06236s
-\end{itemize}
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{extended_memory.png}
+	\caption{Per-timer memory vs. timer count, extended to hundreds of millions (C, bytes, lower is better). Flat for every implementation.}
+	\label{fig:extendedmemory}
+\end{figure}
 
-\subsection{Concurrency and NUMA Performance}
-We evaluated both implementations under concurrent access and in NUMA environments:
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{extended_tick.png}
+	\caption{Empty-tick latency vs. timer count, extended to hundreds of millions (C, ns). Lawn2 stays flat while the wheel's cost keeps climbing.}
+	\label{fig:extendedtick}
+\end{figure}
 
-\subsubsection{Concurrent Performance}
-Under concurrent access, Lawn significantly outperforms Timer Wheel:
+The naive ring's expiry advantage over Lawn2, conversely, narrows as scale grows and then holds steady rather than closing further: 43.4 times faster at one million timers, 28.0 times at ten million, 22.5 times at 40 million, and 21.3 times at one hundred million. One caveat applies across every implementation at this extended scale: deletion latency does not follow a clean trend for any of them, varying by 5 to 20 times between adjacent measured scales with no consistent direction. We attribute this to the interaction between a fully randomized deletion order and cache and allocator state on a very large working set, not to a change in the underlying algorithm, since the same non-monotonic pattern appears in all four implementations rather than only the ones with a case for concern.
 
-\begin{itemize}
-    \item \textbf{Lawn}: Mean latency of 0.00024s with standard deviation of 0.00090s
-    \item \textbf{Timer Wheel}: Mean latency of 0.01211s with standard deviation of 0.04149s
-\end{itemize}
+Beyond varying timer count alone, we reran the complete parameter sweep, distinct-TTL count, TTL span, and workload, at a fixed baseline of ten million timers instead of the main results' one hundred thousand, to check whether the crossover and overflow effects documented above scale in the simple way one might expect. They do not, and they diverge in opposite directions. The overflow effect on the naive ring's memory weakens sharply in relative terms at this baseline. At the original baseline its memory grows 2.9 times across the TTL-span sweep, 4.16 to 12.16\,MB. At ten million timers the identical sweep produces only 1.2\,\% growth, 507.5 to 513.8\,MB, because the per-timer cost that dominates total memory at this scale swamps the fixed ring-overhead cost that dominated it at the smaller scale. Figure \ref{fig:naiveoverflowscale} shows both curves normalized to their own smallest-span point, making the flattening directly visible. This sweep measures steady-state footprint, not the cost of an actual resize event, which moves proportionally more data at larger $N$ and so plausibly grows worse, not better, even as the steady-state tax shrinks. We did not measure a live resize event directly and flag this as a gap rather than a resolved question.
 
-\subsubsection{NUMA Performance}
-In NUMA environments, Lawn significantly outperforms Timer Wheel:
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{naive_overflow_scale.png}
+	\caption{Naive ring's memory growth across the TTL-span sweep at two baselines, normalized to each series' own smallest-span point (C, lower is better). The 2.9x growth at one hundred thousand timers falls to 1.2\,\% at ten million. Lawn2 is flat at both baselines.}
+	\label{fig:naiveoverflowscale}
+\end{figure}
 
-\begin{itemize}
-    \item \textbf{Lawn}: Mean latency of 0.00024s with standard deviation of 0.0000043s
-    \item \textbf{Timer Wheel}: Mean latency of 0.02557s with standard deviation of 0.0000172s
-\end{itemize}
+The distinct-TTL crossover is, conversely, partly superseded by a second and more severe effect at this scale. At the original baseline the wheel's empty-tick cost across the distinct-TTL sweep is a mild 270 to 522\,ns, sensitive mainly to how many distinct TTLs are in use. At ten million timers, under the identical sweep, the wheel's cost balloons to 24 to 145\,$\mu$s and no longer tracks distinct-TTL count in any clean, monotonic way. Lawn2 is unmoved by either axis, holding at 1.0 to 1.1\,ns regardless of distinct-TTL count or absolute scale: its advantage does not depend on which of the two effects, TTL diversity or the wheel's own scale-driven cost, happens to dominate.
 
-\subsection{Stability}
-We evaluated the stability of both implementations under long-running workloads:
+The obvious candidate explanation for the wheel's cost growing with $N$ at fixed TTL span is density, the number of live timers sharing each tick, $N$ divided by the TTL span. We tested this directly by sweeping the TTL span itself at both baselines and converting to density (Figure~\ref{fig:densityvsn}), rather than inferring it from the distinct-TTL sweep above. Density alone does not explain the effect. One hundred thousand timers over a span of 2\,560 ticks and ten million timers over a span of 256\,000 ticks both give a density of about 39 timers per tick, but the wheel's cost differs by about 128 times between them, 272.9\,ns versus 35\,107.3\,ns. Absolute timer count, not density, is the dominant driver of this cost. Lawn2 is unaffected by either baseline or density, holding at about 1\,ns throughout, the same flat behavior seen against the distinct-TTL sweep above. We did not isolate the specific mechanism behind the wheel's cost, larger absolute cascade populations, cache locality at a larger working set, or some combination, and flag this as an open question rather than speculate beyond the measurement.
 
-\begin{itemize}
-    \item \textbf{Lawn}: 460,523 insertions, 345,611 deletions, 1,188 ticks, max latency of 0.00272s, average latency of 0.00015s
-    \item \textbf{Timer Wheel}: 278,773 insertions, 209,506 deletions, 432 ticks, max latency of 0.20000s, average latency of 0.00024s
-\end{itemize}
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{density_vs_n.png}
+	\caption{Empty-tick latency vs. density (timers per tick, $N$ / TTL span) at two baselines (C, lower is better). Matched density does not equalize the wheel's cost between baselines, so density alone does not explain its blowup. Lawn2 is flat throughout.}
+	\label{fig:densityvsn}
+\end{figure}
 
-The results show that Lawn is more stable (presenting less jitter) than Timer Wheel, with lower maximum latency and more consistent performance over time. especially in cases where the variability of the TTLs is low (i.e. when the TTL set is small or tightly bound in size).
+\subsection{Concurrency}
+Figure \ref{fig:concurrency} reports single-machine throughput under an external per-shard mutex applied identically to every implementation. Single-threaded, Lawn2 reaches 121\,M ops/s versus the wheel's 90\,M (the naive ring leads at 134\,M). As threads are added under coarse locking, aggregate throughput \emph{falls} for every implementation on this machine (turbo and core-asymmetry effects). Lawn2 retains only a modest $\sim$1.3 to 1.4x edge at twelve threads (18.8\,M vs. 14.1\,M ops/s). We found no evidence of the large concurrency advantages sometimes attributed to bucketed timers. Realizing one would require a lock-free implementation, which we leave to future work.
 
-\subsection{A View of Multiprocessing}
-Unlike the state-of-the-art Timer Wheel algorithm, Lawn enables the simultaneous timer handling and bookkeeping by splitting the buckets between several worker processes, threads or even different machines altogether, adding or removing workers as needed. This method enables usage of the Lawn algorithm in large scale or highly parallel applications and does not require the use of semaphores than other synchronization mechanisms within a single bucket.
-
-The natural independence of TTL buckets in Lawn makes it particularly well-suited for distributed and multi-processor environments. Each TTL bucket can be processed independently, allowing for efficient parallelization across multiple cores, processors, or even machines. This property is a direct result of the TTL-based organization, which is fundamentally different from the time-based organization of Timer Wheel.
-
-\subsubsection{Distributed Implementation}
-In a distributed implementation, TTL buckets can be partitioned across multiple machines:
-
-\begin{itemize}
-    \item \textbf{Bucket Partitioning}: TTL buckets can be assigned to different machines using a consistent hashing approach, ensuring that timers with the same TTL are processed by the same machine.
-    
-    \item \textbf{Coordination}: A lightweight coordination mechanism can be used to ensure that timers are processed in the correct order within each TTL bucket.
-    
-    \item \textbf{Fault Tolerance}: The independence of TTL buckets enables simple fault tolerance mechanisms, where failed machines can be replaced without affecting the processing of timers on other machines.
-\end{itemize}
-
-\subsubsection{Multi-Processor Implementation}
-In a multi-processor environment, TTL buckets can be processed by different processors:
-
-\begin{itemize}
-    \item \textbf{Processor Assignment}: TTL buckets can be assigned to processors using a simple modulo or hash-based approach, ensuring even distribution of work.
-    
-    \item \textbf{Load Balancing}: Processors can be added or removed dynamically based on load, with minimal impact on the overall system.
-    
-    \item \textbf{NUMA Optimization}: In NUMA systems, TTL buckets can be assigned to processors based on NUMA node affinity, reducing cross-node memory access.
-\end{itemize}
-
-\subsubsection{Implementation Considerations}
-Several implementation considerations are important for multi-processing environments:
-
-\begin{itemize}
-    \item \textbf{Clock Synchronization}: In distributed implementations, clock synchronization between machines is critical for correct timer expiration.
-    
-    \item \textbf{Network Overhead}: The communication overhead between machines should be minimized, especially for high-frequency timer operations.
-    
-    \item \textbf{Consistency}: The consistency requirements of the application should be considered when designing the distributed implementation.
-\end{itemize}
-
-The multi-processing capabilities of Lawn make it particularly well-suited for large-scale, high-throughput systems, where the ability to scale horizontally across multiple machines or processors is critical for performance.
-
-\subsection{Known implementations of Lawn}
-As mentioned in the body of this paper, the Lawn algorithm has already been tested and deployed in several programming languages by different organizations. Some of these implementations were developed by or in tandem with the author of this paper and some with his permission all with reported improvement in performance. The algorithm is free to use and the source code for many of these implementations has been published under an open source license.
-\begin{enumerate}
-	\item Redis Internals \cite{Redis} - a high performance in-memory key-value store - uses Lawn implementation for streams and other internal timers.
-	\item ReDe event dehydrator Redis module\cite{REDE}.
-	\item Mellanox RDMA timers for an Unified Communication X\cite{MLNX} . 
-	\item User specific rate limiting-timers for client device power consumption optimization\cite{VUSR}.
-	\item $clib$ Timer management utility lib.
-\end{enumerate}
+\begin{figure}[ht]
+	\centering
+	\includegraphics[width=0.9\linewidth]{concurrency.png}
+	\caption{Single-machine throughput vs. thread count, sharded (C).}
+	\label{fig:concurrency}
+\end{figure}
 
 \section{Conclusion}
-Lawn is a simplified overflow-free algorithm that displays near-optimal results for use cases involving many (tens of millions) concurrent timers from large scale (tens of thousands) independent machine systems.
-Using Lawn is an elegant solution to the overflow problem in Timer Wheel and other current algorithms, enabling simpler use of available cores and requiring less knowledge about the usage pattern with the only requirement is for the TTLs being discrete and their number being bound, but not knowing what the bound on max TTL is.
-The algorithm is currently deployed and in use by several organizations under real-world load, all reporting satisfactory results.
+Lawn is a simple, overflow-free timer data structure that maps queues by TTL rather than by expiration time, giving an unbounded span with no rebuilds. Its optimized implementation, Lawn2, beats a production tickless hierarchical timing wheel on deletion ($\sim$3.4x), on insertion at scale ($\sim$1.4 to 1.9x), on per-timer memory at scale ($\sim$2.2x), and on draining due timers under every realistic TTL distribution tested ($\sim$4.9 to 27x), while keeping memory flat over an unbounded TTL span. The same $O(1)$ bucketing also keeps the idle per-tick check constant, against the wheel's cascade-bound cost that grows with scale. These gains are real but conditional: they hold only while the number of distinct TTLs stays under roughly one to five percent of the live-timer count, and Lawn degrades to $O(n)$ per tick and loses to the wheel beyond that. Lawn is therefore the right choice for large-scale systems whose timers are drawn from a bounded set of discrete TTLs, and the wrong one for continuous or near-unique TTL distributions.
 
-\subsection{Summary of Contributions}
-This paper makes several key contributions to the field of timer data structures:
-
+\subsection{Contributions}
 \begin{itemize}
-    \item \textbf{Novel Data Structure}: We present Lawn, a TTL-based timer data structure that addresses the overflow problem in Timer Wheel implementations while maintaining good performance characteristics.
-    
-    \item \textbf{Theoretical Analysis}: We provide a theoretical analysis of Lawn's correctness, completeness, and complexity, demonstrating its advantages over existing approaches.
-    
-    \item \textbf{Memory and Concurrency Model and NUMA Optimization}: We analyze Lawn's memory access patterns, cache behavior, and concurrency characteristics, showing how its TTL-based organization enables efficient concurrent implementations.We demonstrate how Lawn can be optimized for NUMA architectures, reducing cross-node memory access and improving performance in modern multi-socket servers.
-    
-    \item \textbf{Comprehensive Evaluation}: We present a comprehensive experimental evaluation of Lawn across various workloads and system configurations, showing significant performance improvements over Timer Wheel implementations.
+    \item \textbf{Data structure}: the TTL-keyed Queue-Map (Lawn) that removes the overflow problem, plus an allocation-free implementation (Lawn2).
+    \item \textbf{Analysis}: correctness, and complexity with an explicit, measured account of the $O(t)$ per-tick dependence and the empty-tick $O(1)$ fast path.
+    \item \textbf{Honest evaluation}: a differential-gated C benchmark of four implementations across scale, TTL span, distinct-TTL count, and workload, quantifying both where Lawn wins and the $t/N$ crossover where it loses.
+    \item \textbf{Deployment}: Lawn is in production use by several organizations, some independent of the author, including Redis Internals for streams and other internal timers\cite{Redis}, the ReDe Redis dehydration module\cite{REDE}, Mellanox RDMA timers for Unified Communication X\cite{MLNX}, client-device rate-limiting timers\cite{VUSR}, and an independent $clib$ timer-management utility library, with the source available for most of these.
 \end{itemize}
 
 \subsection{Future Work}
-Several directions for future work emerge from this research:
-
 \begin{itemize}
-    \item \textbf{Formal Verification}: A formal verification of Lawn's correctness using theorem provers or model checkers would strengthen the theoretical foundation.
-    
-    \item \textbf{Queueing Theory Analysis}: A more detailed queueing theory analysis of Lawn's performance under different arrival patterns and TTL distributions would provide deeper insights into its behavior.
-    
-    \item \textbf{Hardware Acceleration}: Exploring hardware acceleration techniques, such as SIMD processing or hardware timers, could further improve Lawn's performance.
-    
-    \item \textbf{Distributed Implementations}: Developing and evaluating distributed implementations of Lawn for large-scale, geographically distributed systems.
-    
-    \item \textbf{Integration with Operating Systems}: Exploring the integration of Lawn with operating system kernels to provide a more efficient timer facility for applications.
+    \item \textbf{Lock-free / per-bucket-lock Lawn}: a genuinely concurrent implementation, and an evaluation on NUMA hardware (not attempted here).
+    \item \textbf{Formal verification} of correctness using theorem provers or model checkers.
+    \item \textbf{Deterministic-service queueing model} (M/D/1) with empirical validation of the latency bounds.
+    \item \textbf{Distributed implementations} for geographically distributed systems.
 \end{itemize}
-
-\subsection{Implications}
-The Lawn algorithm has several important implications for the design of high-performance systems:
-
-\begin{itemize}
-    \item \textbf{Scalability}: Lawn enables the construction of highly scalable timer facilities that can handle millions of concurrent timers with minimal overhead.
-    
-    \item \textbf{Flexibility}: Lawn's TTL-based organization provides flexibility in TTL resolution without requiring prior knowledge of the maximum TTL.
-    
-    \item \textbf{Efficiency}: Lawn's efficient memory access patterns and concurrency characteristics make it well-suited for modern multi-core, NUMA architectures.
-    
-    \item \textbf{Simplicity}: Lawn's simple design makes it easy to implement and maintain, reducing the complexity of timer facilities in large-scale systems.
-\end{itemize}
-
-In conclusion, Lawn represents a significant advancement in timer data structures, addressing the limitations of existing approaches while providing a simple, efficient, and scalable solution for high-performance systems. Its TTL-based organization, efficient memory access patterns, and concurrency characteristics make it well-suited for modern computing environments, from single-server applications to large-scale, distributed systems.
 
 
 \bibliographystyle{ieeetr}
