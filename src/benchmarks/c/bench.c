@@ -163,12 +163,19 @@ static void row(FILE *f, const char *val, const char *algo, agg_t a, size_t n) {
 /* ---- sweep driver ---- */
 
 static const size_t   N_VALS[]    = {1000, 10000, 100000, 1000000};
-static const uint64_t SPAN_VALS[] = {256, 2560, 25600, 256000};
+/* Chosen by a dedicated sweep (lawn2 vs wahern, n=100K, powers of two from
+ * 128 to 65536) rather than picked arbitrarily: the wheel's tick cost is
+ * genuinely non-monotonic in span (a reproducible dip near 2048, a spike
+ * near 4096, tied to its internal hierarchical level boundaries, not noise:
+ * confirmed by rerunning the sweep independently). 1024 is the smallest
+ * value past the steep small-span regime and sits on neither the dip nor
+ * the spike. The span-sweep axis itself uses the same grid. */
+static const uint64_t SPAN_VALS[] = {128, 1024, 8192, 65536};
 static const uint64_t DT_VALS[]   = {1, 10, 100, 1000, 10000};
 static const int      WL_VALS[]   = {WL_UNIFORM, WL_BURSTY, WL_SPREAD};
 static const char    *WL_NAMES[]  = {"uniform", "bursty", "spread"};
 
-static const params_t BASE = {100000, 2560, 100, WL_UNIFORM, SEED0};
+static const params_t BASE = {100000, 1024, 100, WL_UNIFORM, SEED0};
 
 typedef struct { const char *name; measure_fn fn; size_t per_run_max; int is_mem; } op_t;
 

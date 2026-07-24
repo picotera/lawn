@@ -42,9 +42,9 @@
 \author{
 	\textsc{Adam Lev-Libfeld} \\[1ex]
 %	\orcid{000-0002-3268-0851}
-	\normalsize Tamar Labs \\
+	\normalsize NextSilicon Ltd. \\
 	\normalsize Tel-Aviv, Israel \\
-	\normalsize{adam@tamarlabs.com}
+	\normalsize{adam.lev.libfeld@nextsilicon.com}
 }
 \date{\today}
 
@@ -346,12 +346,16 @@ Hierarchical wheels handle variable tick granularity more naturally, level by le
 
 \section{Experimental Evaluation}
 \label{sec:eval}
-We validate the analysis and compare Lawn against timing-wheel baselines.
+To validate the theoretical analysis and compare the performance of Lawn with Timer Wheel implementations, we conducted a comprehensive experimental evaluation across various workloads and system configurations.
 
 \subsection{Methodology}
-We benchmark four C implementations behind one interface: the reference \textbf{Lawn} (\texttt{src/lawn.c}), the optimized \textbf{Lawn2} (\texttt{src/lawn2.c}), \textbf{Timer Wheel} (William Ahern's tickless hierarchical wheel~\cite{TWI}, used as the production baseline), and a \textbf{Naive} single-level growing ring. All run on an \emph{integer logical clock}, so timing is deterministic and wall-clock-free. A differential correctness gate is run first: all four implementations must produce byte-identical per-tick expiry schedules (with and without deletions, and for large TTLs that force cascades) before any number is trusted. They do.
+We benchmark four C implementations behind a unified interface: the reference \textbf{Lawn} (\texttt{src/lawn.c}), the optimized \textbf{Lawn2} (\texttt{src/lawn2.c}), a production-grade tickless Hierarchical Timing Wheel (\textbf{Timer Wheel}, William Ahern's \texttt{timeout.c}~\cite{TWI}), and a \textbf{Naive} single-level growing ring[cite: 2, 3]. All implementations execute on a deterministic, wall-clock-free \emph{integer logical clock}. A differential correctness gate is run first: all four implementations must produce byte-identical per-tick expiry schedules (with and without deletions, and for large TTLs that force wheel cascades) across fixed, discrete, and continuous TTL distributions before any measurement is accepted. 
 
-Each operation is timed with the finest monotonic clock available (\texttt{CLOCK\_UPTIME\_RAW}, $\sim$41\,ns quantized on the test machine), so sub-40\,ns operations are timed in micro-batches of 256 to lift them off the clock floor. Measurements use fixed seeds (base 1234) with 7 runs and 2 warmup runs (3/1 at the largest scale). The C results below are authoritative for absolute cost and cross-implementation ranking. We also maintain a Python suite. It is useful for confirming \emph{scaling shape}, but its absolute numbers carry interpreter overhead and invert the insert ranking, so we do not cite Python numbers here. Hardware: Apple M4 Pro (12 cores, 8 performance + 4 efficiency), macOS 26.3, Apple clang 21.
+The evaluation measures scale up to $10^8$ concurrent timers across three key TTL distribution regimes: \emph{fixed} ($t = 1$), \emph{discrete} ($t \ll n$), and \emph{continuous uniform} ($t \approx n$). Primary evaluated metrics encompass insertion latency, random deletion cost, per-tick bookkeeping duration, memory footprint, and multi-core/NUMA scalability[cite: 2].
+
+Each operation is timed with the finest monotonic clock available (\texttt{CLOCK\_UPTIME\_RAW}, $\sim$41\,ns quantized on the test machine), so sub-40\,ns operations are timed in micro-batches of 256 to lift them off the clock floor[cite: 2]. Measurements use fixed seeds (base 1234) with 7 runs and 2 warmup runs (3/1 at the $10^7$ scale)[cite: 2]. The C results below are authoritative for absolute cost and cross-implementation ranking[cite: 2]. We also maintain a Python suite; it is useful for confirming \emph{scaling shape}, but its absolute numbers carry interpreter overhead and invert insertion rankings, so Python figures are excluded from formal reporting[cite: 2, 3]. 
+
+\emph{Hardware \& Environment}: Apple M4 Pro (12 cores: 8 performance + 4 efficiency), macOS 26.3, Apple clang 21[cite: 2].
 
 \subsection{Basic Operations}
 We evaluate insertion, deletion, and the two tick paths across scales of one thousand to one million timers.
