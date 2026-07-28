@@ -8,6 +8,6 @@ typedef uint64_t mstime_t;
 /*
  * @return current time in milliseconds
  */
-mstime_t current_time_ms (void);
+mstime_t current_time_ms(void);
 
-#endif // MILLISECONDS_TIME_H // 
+#endif // MILLISECONDS_TIME_H

@@ -8,7 +8,6 @@
 #define WL_UNIFORM 0
 #define WL_BURSTY  1
 #define WL_SPREAD  2
-
 typedef struct { uint64_t s; } rng_t;
 void     rng_seed(rng_t *r, uint64_t seed);
 uint64_t rng_u64(rng_t *r);

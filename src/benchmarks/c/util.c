@@ -1,7 +1,23 @@
 #include "util.h"
+#include "cts.h"
+#include "millisecond_time.h"
 #include <stdlib.h>
 #include <math.h>
 #include <time.h>
+
+uint64_t g_cts_now = 0;
+
+mstime_t current_time_ms(void) {
+    return (mstime_t)g_cts_now;
+}
+
+const cts_vtable *const cts_algos[] = {
+    &cts_lawn_vtable,
+    &cts_lawn2_vtable,
+    &cts_wahern_vtable,
+    &cts_naive_vtable,
+};
+const int cts_nalgos = (int)(sizeof(cts_algos) / sizeof(cts_algos[0]));
 
 /* splitmix64 */
 void rng_seed(rng_t *r, uint64_t seed) { r->s = seed + 0x9e3779b97f4a7c15ULL; }
@@ -15,7 +31,6 @@ double rng_double(rng_t *r) { return (double)(rng_u64(r) >> 11) * (1.0 / 9007199
 
 uint64_t cts_now_ns(void) {
 #if defined(__APPLE__)
-    /* Finest monotonic source on macOS; CLOCK_MONOTONIC here is 1us-quantized. */
     return clock_gettime_nsec_np(CLOCK_UPTIME_RAW);
 #else
     struct timespec ts;
@@ -29,17 +44,15 @@ size_t gen_ttls(uint64_t *out, size_t n, uint64_t ttl_span,
     uint64_t distinct = distinct_ttls;
     if (distinct > ttl_span) distinct = ttl_span;
     if (distinct < 1) distinct = 1;
-
     uint64_t *values = malloc(distinct * sizeof *values);
     size_t nv = 0;
     if (distinct == 1) {
         values[nv++] = ttl_span;
     } else {
-        double step = (double)ttl_span / (double)distinct;
         for (uint64_t i = 0; i < distinct; i++) {
-            long v = lround((double)(i + 1) * step);
+            uint64_t v = (i + 1) * ttl_span / distinct;
             if (v < 1) v = 1;
-            if (nv == 0 || (uint64_t)v != values[nv - 1]) values[nv++] = (uint64_t)v;
+            if (nv == 0 || v != values[nv - 1]) values[nv++] = v;
         }
     }
 

@@ -14,6 +14,7 @@
 #define LAWN2_H
 
 #include <stdint.h>
+#include <sys/queue.h>  /* TAILQ(3) */
 
 /* Intrusive node: embed in your object (wahern struct-timeout style). The
  * caller owns storage; lawn2 only links it into the per-TTL queue. */
@@ -22,6 +23,7 @@ typedef struct lawn2_node {
     uint64_t expiration;          /* absolute expiry (now_at_add + ttl)    */
     struct lawn2_node *next, *prev;
     int in_store;                 /* 1 while linked; guards double del/fire */
+    uint64_t id;
 } lawn2_node;
 
 typedef struct lawn2 lawn2;
@@ -29,10 +31,13 @@ typedef struct lawn2 lawn2;
 lawn2   *lawn2_new(void);
 void     lawn2_free(lawn2 *l);          /* frees the store, not caller nodes */
 
-void     lawn2_add(lawn2 *l, lawn2_node *n, uint64_t ttl); /* Push, O(1)      */
-void     lawn2_del(lawn2 *l, lawn2_node *n);               /* Pull, O(1)      */
-uint64_t lawn2_tick(lawn2 *l);          /* Poll: +1 tick, return #expired    */
+void     lawn2_add(lawn2 *l, lawn2_node *n, uint64_t ttl); // Push, O(1)
+void     lawn2_del(lawn2 *l, lawn2_node *n); // Pull, O(1)
+uint64_t lawn2_tick(lawn2 *l, lawn2_node **out_head); // Poll: +1 tick, return #expired and populate list of exired nodes in out_head
 uint64_t lawn2_size(lawn2 *l);
 uint64_t lawn2_now(lawn2 *l);
+
+uint64_t lawn2_next_expiration(lawn2 *l);
+void     lawn2_set_now(lawn2 *l, uint64_t now);
 
 #endif /* LAWN2_H */

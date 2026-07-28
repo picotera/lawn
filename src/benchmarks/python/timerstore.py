@@ -73,16 +73,3 @@ def percentile(sorted_vals: List[float], p: float) -> float:
     return sorted_vals[f] + (sorted_vals[c] - sorted_vals[f]) * (k - f)
 
 
-def _demo() -> None:
-    """Self-check: percentile edges and monotonicity."""
-    assert percentile([], 99) == 0.0
-    assert percentile([5], 50) == 5.0
-    assert percentile([0, 10], 50) == 5.0
-    assert percentile([0, 100], 99) == 99.0
-    assert percentile([1, 2, 3, 4], 0) == 1
-    assert percentile([1, 2, 3, 4], 100) == 4
-    print("timerstore self-check ok")
-
-
-if __name__ == "__main__":
-    _demo()

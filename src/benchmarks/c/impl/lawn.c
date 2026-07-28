@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <inttypes.h>
 
 struct cts_store {
     Lawn *l;
@@ -17,13 +18,7 @@ struct cts_store {
  * per-op cost). Returns length; buf is NUL-terminated. Lawn is string-keyed by
  * design, so a string key is inherent; only the slow formatter is avoided. */
 static size_t keyof(uint64_t id, char *buf) {
-    char tmp[24];
-    int n = 0;
-    if (id == 0) tmp[n++] = '0';
-    while (id) { tmp[n++] = (char)('0' + id % 10); id /= 10; }
-    for (int i = 0; i < n; i++) buf[i] = tmp[n - 1 - i];
-    buf[n] = '\0';
-    return (size_t)n;
+    return (size_t)snprintf(buf, 24, "%" PRIu64, id);
 }
 
 static cts_store *lawn_create(void) {

@@ -15,15 +15,20 @@ struct cts_store {
 };
 
 static lawn2_node *node_for(struct cts_store *s, uint64_t id) {
-    size_t bi = (size_t)(id >> BLK_BITS);
-    if (bi >= s->nblocks) {
+    size_t block_index = (size_t)(id >> BLK_BITS);
+    if (block_index >= s->nblocks) {
         size_t old = s->nblocks;
-        s->nblocks = bi + 1;
+        s->nblocks = block_index + 1;
         s->blocks = realloc(s->blocks, s->nblocks * sizeof *s->blocks);
-        for (size_t i = old; i < s->nblocks; i++)
+        for (size_t i = old; i < s->nblocks; i++) {
             s->blocks[i] = calloc(BLK_SIZE, sizeof(lawn2_node));
+            uint64_t base_id = (uint64_t)i << BLK_BITS; // Calc base ID offset for block i
+            for (size_t j = 0; j < BLK_SIZE; j++) { // Fill in ids for all nodes in block
+                s->blocks[i][j].id = base_id | j; 
+            }
+        }
     }
-    return &s->blocks[bi][id & BLK_MASK];
+    return &s->blocks[block_index][id & BLK_MASK];
 }
 
 static cts_store *l2_create(void) {
@@ -50,7 +55,11 @@ static int l2_stop(cts_store *s, uint64_t id) {
     return 1;
 }
 
-static uint64_t l2_tick(cts_store *s) { return lawn2_tick(s->l); }
+static uint64_t l2_tick(cts_store *s) { 
+    lawn2_node *expired_head = NULL;
+    uint64_t count = lawn2_tick(s->l, &expired_head);
+    return count; 
+}
 static uint64_t l2_size(cts_store *s) { return lawn2_size(s->l); }
 
 const cts_vtable cts_lawn2_vtable = {

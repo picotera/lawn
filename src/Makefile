@@ -20,7 +20,7 @@ ifeq ($(uname_S),Linux)
 	SHOBJ_LDFLAGS ?= -shared -Bsymbolic -Bsymbolic-functions -ldl -lpthread
 else
 	CFLAGS += -mmacosx-version-min=10.6
-	SHOBJ_LDFLAGS ?= -macosx_version_min 10.6 -exported_symbol _RedisModule_OnLoad -bundle -undefined dynamic_lookup -ldl -lpthread
+	SHOBJ_LDFLAGS ?= -macosx_version_min 10.6 -bundle -undefined dynamic_lookup
 endif
 export CFLAGS
 
@@ -28,9 +28,6 @@ export CFLAGS
 SOURCEDIR=$(shell pwd -P)
 CC_SOURCES = $(wildcard $(SOURCEDIR)/*.c)
 CC_SOURCES += $(wildcard $(SOURCEDIR)/utils/*.c)
-CC_SOURCES += $(wildcard $(SOURCEDIR)/trie/*.c)
-CC_SOURCES += $(wildcard $(SOURCEDIR)/timerwheel/*.c)
-CC_SOURCES += $(wildcard $(SOURCEDIR)/benchmarks/*.c)
 
 # Convert all sources to .o files
 CC_OBJECTS = $(patsubst %.c, %.o, $(CC_SOURCES) )
@@ -40,11 +37,9 @@ CC_OBJECTS = $(patsubst %.c, %.o, $(CC_SOURCES) )
 CC_DEPS = $(patsubst %.c, %.d, $(CC_SOURCES) )
 
 # Library dependencies
-LIBTRIEMAP=trie/libtriemap.a
+LIBS=
+ALLDEPS=$(CC_OBJECTS)
 
-# Compilation deps for the module
-LIBS= $(LIBTRIEMAP)
-ALLDEPS=$(CC_OBJECTS) $(LIBS)
 
 %.c: %.y
 
@@ -52,15 +47,14 @@ ALLDEPS=$(CC_OBJECTS) $(LIBS)
 %.o: %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) $(TARGET_ARCH) -c $< -o $@ -MMD -MF $(@:.o=.d)
 
-all: lawn.so benchmarks/lawn_timerstore_test benchmarks/timerwheel_timerstore_test
+all: lawn.so
+
 
 # Include all dependency files for C files
 -include $(CC_DEPS)
 
 # Library compile rules
-$(LIBTRIEMAP):
-	$(MAKE) -C trie 
-.PHONY: $(LIBTRIEMAP)
+
 
 build_tests: lawn.so 
 	$(MAKE) -C tests build
@@ -78,7 +72,7 @@ buildall:  lawn.so build_tests
 lawn.so: $(ALLDEPS)
 	# Just to make sure old versions of the lib are deleted
 	rm -f lawn.so
-	$(LD) -o $@ $(ALLDEPS) $(SHOBJ_LDFLAGS) -lc -lm 
+	$(CC) $(CFLAGS) -bundle -undefined dynamic_lookup -o $@ $(ALLDEPS) -lm
 
 # Build the Lawn-based TimerStore test
 lawn_timerstore_test: lawn.o lawn_timerstore.o utils/millisecond_time.o utils/hashmap.o

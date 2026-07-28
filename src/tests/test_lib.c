@@ -31,7 +31,7 @@ char* string_append(char* a, const char* b)
 char* printNode(ElementQueueNode* node)
 {
     char* node_str = (char*)malloc((node->element_len+256+256)*sizeof(char));
-    sprintf(node_str, "[elem=%s,ttl=%lu,exp=%lu]", node->element, node->ttl_queue, node->expiration);
+    sprintf(node_str, "[elem=%s,ttl=%llu,exp=%llu]", node->element, node->ttl_queue, node->expiration);
     return node_str;
 
 }
@@ -107,7 +107,7 @@ int test_set_get_element_exp() {
   if (set_element_ttl(store, key, strlen(key), ttl_ms) == LAWN_ERR) return FAIL;
   mstime_t saved_ms = get_element_exp(store, key);
   if (saved_ms != expected) {
-    printf("ERROR: expected %lu but found %lu\n", expected, saved_ms);
+    printf("ERROR: expected %llu but found %llu\n", expected, saved_ms);
     retval = FAIL;
   } else
     retval = SUCCESS;
@@ -131,7 +131,7 @@ int test_del_element_exp() {
   if (del_element_exp(store, key) == LAWN_ERR) return FAIL;
   mstime_t saved_ms = get_element_exp(store, key);
   if (saved_ms != expected) {
-    printf("ERROR: expected %lu but found %lu\n", expected, saved_ms);
+    printf("ERROR: expected %llu but found %llu\n", expected, saved_ms);
     retval = FAIL;
   } 
   else if (del_element_exp(store, key) == LAWN_ERR) return FAIL;
@@ -169,7 +169,7 @@ int test_next_at() {
     mstime_t expected = current_time_ms() + ttl_ms3;
     mstime_t saved_ms = next_at(store);
     if (saved_ms != expected) {
-      printf("ERROR: expected %lu but found %lu (diff: %ld)\n", expected, saved_ms, expected - saved_ms);
+      printf("ERROR: expected %llu but found %llu (diff: %llu)\n", expected, saved_ms, expected - saved_ms);
       retval = FAIL;
     } else
       retval = SUCCESS;
@@ -214,7 +214,7 @@ int test_pop_next() {
       mstime_t expected_ms = -1;
       mstime_t saved_ms = get_element_exp(store, expected);
       if (expected_ms != saved_ms) {
-        printf("ERROR: expected %lu but found %lu\n", expected_ms, saved_ms);
+        printf("ERROR: expected %llu but found %llu\n", expected_ms, saved_ms);
         retval = FAIL;
       } else
         retval = SUCCESS;

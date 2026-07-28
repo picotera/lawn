@@ -2,7 +2,7 @@ ifndef RM_INCLUDE_DIR
 	RM_INCLUDE_DIR=../
 endif
 
-CFLAGS = -g -O2 -fPIC -std=gnu99 -I./ 
+CFLAGS = -g -O2 -fPIC -std=gnu99 -I./ -I../ -I../utils
 %.c: %.y
 
 ifndef VERBOSE
@@ -13,8 +13,6 @@ endif
 SOURCEDIR=..
 CC_SOURCES = $(wildcard $(SOURCEDIR)/*.c)
 CC_SOURCES += $(wildcard $(SOURCEDIR)/utils/*.c)
-CC_SOURCES += $(wildcard $(SOURCEDIR)/trie/*.c)
-CC_SOURCES += $(wildcard $(SOURCEDIR)/timerwheel/*.c)
 
 # Convert all sources to .o files
 DEP_OBJECTS = $(patsubst %.c, %.o, $(CC_SOURCES) )
@@ -27,10 +25,10 @@ TEST_EXECUTABLES = $(patsubst %.c, %.run, $(TEST_SOURCES)  )
 TEST_DEPS = $(patsubst %.c, %.d,$(TEST_SOURCES))
 
 # Library dependencies
-DEP_LIBS =  ../trie/libtriemap.a
-DEPS = $(DEP_OBJECTS) $(DEP_LIBS)
+DEP_LIBS =
+DEPS = $(DEP_OBJECTS)
 SRCDIR := $(shell pwd)
-LDFLAGS :=  -lc -lm -ldl -lpthread 
+LDFLAGS := -lm
 
 CC=gcc
 
@@ -58,8 +56,6 @@ test: build $(TEST_EXECUTABLES)
 	for t in test_*.run;\
 	 do ./$$t;\
 	done
-	# ./tests/helloworld.py
-	# ./tests/test.py --noload
 
 memcheck: build $(TEST_EXECUTABLES)
 	set -e; \
