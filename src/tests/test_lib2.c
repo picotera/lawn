@@ -18,46 +18,23 @@
 
 /*################### Test State Manegemet #########################*/
 
-#define BLK_BITS 12
-#define BLK_SIZE (1u << BLK_BITS)
-#define BLK_MASK (BLK_SIZE - 1)
-
-typedef struct state_store {
+typedef struct test_state_store {
     lawn2       *l;
-    lawn2_node **blocks;   /* array of stable node blocks */
-    size_t       nblocks;
+    store       *st;
 } state;
-
-static lawn2_node *node_for(state *s, uint64_t id) {
-    size_t block_index = (size_t)(id >> BLK_BITS);
-    if (block_index >= s->nblocks) {
-        size_t old = s->nblocks;
-        s->nblocks = block_index + 1;
-        s->blocks = realloc(s->blocks, s->nblocks * sizeof *s->blocks);
-        for (size_t i = old; i < s->nblocks; i++) {
-            s->blocks[i] = calloc(BLK_SIZE, sizeof(lawn2_node));
-            uint64_t base_id = (uint64_t)i << BLK_BITS; // Calc base ID offset for block i
-            for (size_t j = 0; j < BLK_SIZE; j++) { // Fill in ids for all nodes in block
-                s->blocks[i][j].id = base_id | j; 
-            }
-        }
-    }
-    return &s->blocks[block_index][id & BLK_MASK];
-}
 
 static state *init(void) {
     state *s = calloc(1, sizeof *s);
     s->l = lawn2_new();
+    s->st = init_store();
     return s;
 }
 
 static void destroy(state *s) {
     lawn2_free(s->l);
-    for (size_t i = 0; i < s->nblocks; i++) free(s->blocks[i]);
-    free(s->blocks);
+    destroy_store(s->st);
     free(s);
 }
-
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((format(printf, 2, 3)))
@@ -75,12 +52,12 @@ static int fail_with_error(state *s, const char *fmt, ...) {
 
 
 static int tick_and_check(state *s, uint64_t expected_expired_count, const uint64_t expected_expired_ids[]) {
-  lawn2_node *expired_head = NULL;
+  lawn2_timer *expired_head = NULL;
   uint64_t count = lawn2_tick(s->l, &expired_head);
 
   uint64_t actual = 0;
   // check all expired ids are expected
-  for (lawn2_node *curr = expired_head; curr != NULL; curr = curr->next) {
+  for (lawn2_timer *curr = expired_head; curr != NULL; curr = curr->next) {
     int found = 0;
     for (int i=0; (i < expected_expired_count && !found); ++i) {
       if (curr->id == expected_expired_ids[i])
@@ -99,7 +76,7 @@ static int tick_and_check(state *s, uint64_t expected_expired_count, const uint6
   // check all expected ids are accounted for
   for (int i=0; i < expected_expired_count; ++i) {
     int found = 0;
-    for (lawn2_node *curr = expired_head; (curr != NULL  && !found); curr = curr->next) {
+    for (lawn2_timer *curr = expired_head; (curr != NULL  && !found); curr = curr->next) {
       if (curr->id == expected_expired_ids[i])
         found = 1;
     }
@@ -115,18 +92,18 @@ static int tick_and_check(state *s, uint64_t expected_expired_count, const uint6
 
 int constructor_distructore_test() {
   int retval = FAIL;
-  lawn2* store = lawn2_new();
-  uint64_t base_size = lawn2_size(store);
+  lawn2* lwn = lawn2_new();
+  uint64_t base_size = lawn2_size(lwn);
   if (base_size != 0)
     printf("ERROR: unexpected lawn size: expected 0 got %llu", base_size);
   else {
-    uint64_t now = lawn2_now(store);
+    uint64_t now = lawn2_now(lwn);
     if (now != 0)
       printf("ERROR: unexpected internal clock: expected 0 got %llu", now);
     else 
       retval = SUCCESS;
   }
-  lawn2_free(store);
+  lawn2_free(lwn);
   return retval;
 }
 
@@ -136,12 +113,12 @@ int test_set_element_ttl() {
   mstime_t ttl_ticks = 10000;
   mstime_t expected = lawn2_now(s->l) + ttl_ticks;
   uint64_t key = 42;
-  lawn2_node *n = node_for(s, key);
+  lawn2_timer *n = timer_for(s->st, key);
   if (n->in_store) 
     return fail_with_error(s,"ERROR: node in store before being inserted");
 
-  lawn2_add(s->l, node_for(s, key), ttl_ticks);
-  n = node_for(s, key);
+  lawn2_add(s->l, timer_for(s->st, key), ttl_ticks);
+  n = timer_for(s->st, key);
   if (!n->in_store) 
     return fail_with_error(s,"ERROR: node NOT in store after being inserted");
 
@@ -157,7 +134,7 @@ int test_set_get_element_exp() {
   uint64_t key = 67;
   uint64_t base_size = lawn2_size(s->l);
   
-  lawn2_node *n = node_for(s, key);
+  lawn2_timer *n = timer_for(s->st, key);
   mstime_t expected = lawn2_now(s->l) + ttl_ticks;
   lawn2_add(s->l, n, ttl_ticks);
 
@@ -168,7 +145,7 @@ int test_set_get_element_exp() {
   if (actual_size != expected_size)
     return fail_with_error(s,"ERROR: unexpected lawn size: expected %llu got %llu", expected_size, actual_size);
   
-  n = node_for(s, key);
+  n = timer_for(s->st, key);
   if (n->expiration != expected) 
     return fail_with_error(s,"ERROR: expected %llu but found %llu\n", expected, n->expiration);
   
@@ -184,13 +161,13 @@ int test_del_element_exp() {
   uint64_t key = 69;
   uint64_t base_size = lawn2_size(s->l);
 
-  lawn2_add(s->l, node_for(s, key), ttl_ticks);
-  lawn2_node *n = node_for(s, key);
+  lawn2_add(s->l, timer_for(s->st, key), ttl_ticks);
+  lawn2_timer *n = timer_for(s->st, key);
   if (!n->in_store) 
     retval = FAIL;
   else {
     lawn2_del(s->l, n);
-    n = node_for(s, key);
+    n = timer_for(s->st, key);
     if (n->in_store)
       return fail_with_error(s,"ERROR: node still in store after being deleted");
     else {
@@ -222,10 +199,10 @@ int test_next_at() {
   uint64_t key4 = 4;
 
   mstime_t expected = lawn2_now(s->l) + ttl_ticks2;
-  lawn2_add(s->l, node_for(s, key1), ttl_ticks1);
-  lawn2_add(s->l, node_for(s, key2), ttl_ticks2);
-  lawn2_add(s->l, node_for(s, key3), ttl_ticks3);
-  lawn2_add(s->l, node_for(s, key4), ttl_ticks4);
+  lawn2_add(s->l, timer_for(s->st, key1), ttl_ticks1);
+  lawn2_add(s->l, timer_for(s->st, key2), ttl_ticks2);
+  lawn2_add(s->l, timer_for(s->st, key3), ttl_ticks3);
+  lawn2_add(s->l, timer_for(s->st, key4), ttl_ticks4);
 
   
   mstime_t next_at = lawn2_next_expiration(s->l);
@@ -253,11 +230,11 @@ int test_pop_expired() {
   mstime_t ttl_ticks4 = 400;
   uint64_t key4 = 4;
 
-  lawn2_add(s->l, node_for(s, key1), ttl_ticks1);
-  lawn2_add(s->l, node_for(s, key2), ttl_ticks2);
-  lawn2_add(s->l, node_for(s, key3), ttl_ticks3);
-  lawn2_del(s->l, node_for(s, key2));
-  lawn2_add(s->l, node_for(s, key4), ttl_ticks4);
+  lawn2_add(s->l, timer_for(s->st, key1), ttl_ticks1);
+  lawn2_add(s->l, timer_for(s->st, key2), ttl_ticks2);
+  lawn2_add(s->l, timer_for(s->st, key3), ttl_ticks3);
+  lawn2_del(s->l, timer_for(s->st, key2));
+  lawn2_add(s->l, timer_for(s->st, key4), ttl_ticks4);
 
 
   if (tick_and_check(s, 0, NULL) == FAIL)

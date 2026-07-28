@@ -1,6 +1,5 @@
 /* lawn2 implementation - see lawn2.h. */
 #include "lawn2.h"
-#include <stdlib.h>
 
 #define GOLDEN 0x9E3779B97F4A7C15ULL
 
@@ -10,7 +9,7 @@
 typedef struct {
     uint64_t   ttl;
     int        used;
-    lawn2_node *head, *tail;
+    lawn2_timer *head, *tail;
 } blade;
 
 struct lawn2 {
@@ -22,6 +21,44 @@ struct lawn2 {
     uint64_t live;
     uint64_t next_expiration;/* lower bound on earliest live expiry */
 };
+
+
+// ##################### timer storage #################################
+
+
+#define BLK_BITS 12
+#define BLK_SIZE (1u << BLK_BITS)
+#define BLK_MASK (BLK_SIZE - 1)
+
+lawn2_timer *timer_for(store *s, uint64_t id) {
+    size_t block_index = (size_t)(id >> BLK_BITS);
+    if (block_index >= s->nblocks) {
+        size_t old = s->nblocks;
+        s->nblocks = block_index + 1;
+        s->blocks = realloc(s->blocks, s->nblocks * sizeof *s->blocks);
+        for (size_t i = old; i < s->nblocks; i++) {
+            s->blocks[i] = calloc(BLK_SIZE, sizeof(lawn2_timer));
+            uint64_t base_id = (uint64_t)i << BLK_BITS; // Calc base ID offset for block i
+            for (size_t j = 0; j < BLK_SIZE; j++) { // Fill in ids for all nodes in block
+                s->blocks[i][j].id = base_id | j; 
+            }
+        }
+    }
+    return &s->blocks[block_index][id & BLK_MASK];
+}
+
+store *init_store(void) {
+    store *s = calloc(1, sizeof *s);
+    return s;
+}
+
+void destroy_store(store *s) {
+    for (size_t i = 0; i < s->nblocks; i++) free(s->blocks[i]);
+    free(s->blocks);
+    free(s);
+}
+
+// ###################### internal datastructure managment #############
 
 static blade *find_slot(lawn2 *l, uint64_t ttl) {
     size_t mask = l->cap - 1;
@@ -53,6 +90,9 @@ static void grow(lawn2 *l) {
     free(ot);
 }
 
+// ######################## user facing APIs ###########################
+
+
 lawn2 *lawn2_new(void) {
     lawn2 *l = calloc(1, sizeof *l);
     l->bits = 4;
@@ -68,7 +108,7 @@ void lawn2_free(lawn2 *l) {
     free(l);
 }
 
-void lawn2_add(lawn2 *l, lawn2_node *n, uint64_t ttl) {
+void lawn2_add(lawn2 *l, lawn2_timer *n, uint64_t ttl) {
     if ((l->count + 1) * 10 >= l->cap * 7) grow(l);  /* keep load < 0.7 */
     blade *b = find_slot(l, ttl);
     if (!b->used) {
@@ -89,7 +129,7 @@ void lawn2_add(lawn2 *l, lawn2_node *n, uint64_t ttl) {
     if (n->expiration < l->next_expiration) l->next_expiration = n->expiration;
 }
 
-void lawn2_del(lawn2 *l, lawn2_node *n) {
+void lawn2_del(lawn2 *l, lawn2_timer *n) {
     if (!n->in_store) return;
     blade *b = find_slot(l, n->ttl);            /* exists */
     if (n->prev) n->prev->next = n->next; else b->head = n->next;
@@ -100,7 +140,7 @@ void lawn2_del(lawn2 *l, lawn2_node *n) {
     /* next_expiration stays a valid lower bound (removal only delays expiry). and this will update on the next tick either way */
 }
 
-uint64_t lawn2_tick(lawn2 *l, lawn2_node **out_head) {
+uint64_t lawn2_tick(lawn2 *l, lawn2_timer **out_head) {
     if (out_head) *out_head = NULL;
     l->now++;
 
@@ -113,7 +153,7 @@ uint64_t lawn2_tick(lawn2 *l, lawn2_node **out_head) {
         if (!b->used) continue;
 
         while (b->head && b->head->expiration <= now) {  /* self-sorted head */
-            lawn2_node *n = b->head;
+            lawn2_timer *n = b->head;
             b->head = n->next; /* Unlink from blade */
             if (b->head) b->head->prev = NULL; else b->tail = NULL;
             n->next = n->prev = NULL;
