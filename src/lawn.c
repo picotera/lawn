@@ -25,10 +25,14 @@
 #include <stdio.h>
 #include <time.h>
 #include <inttypes.h>
-#include <math.h>
 #include "lawn.h"
-// #include "utils/millisecond_time.h"
-#include "utils/hash_funcs.h"
+static inline unsigned long string_hash(const char *str) {
+    unsigned long hash = 5381;
+    int c;
+    while ((c = *str++))
+        hash = ((hash << 5) + hash) + c;
+    return hash;
+}
 
 /***************************
  *    Hashmap Utilities

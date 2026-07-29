@@ -13,7 +13,6 @@ import matplotlib.pyplot as plt  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RESULTS = os.path.join(HERE, "..", "..", "src", "benchmarks", "c", "results_c")
-HUGE_SCALE = os.path.join(RESULTS, "huge_scale")
 HUGE_SWEEP = os.path.join(RESULTS, "huge_full_sweep")
 OUT = os.path.join(HERE, "..")
 
@@ -142,10 +141,9 @@ def concurrency_plot():
 
 def extended_tick_plot():
     """tick_advance vs n, extended far past the main results' one-million-timer
-    ceiling (results_c/huge_scale/tick_advance_n.csv), for Section VII.F."""
-    with open(os.path.join(HUGE_SCALE, "tick_advance_n.csv")) as f:
-        rows = list(csv.DictReader(f))
-    d = by_algo(rows, "n", "mean_ns", "std_ns")
+    ceiling (results_c/huge_full_sweep/tick_advance_n.csv), for Section VII.F."""
+    rows = read_headerless(os.path.join(HUGE_SWEEP, "tick_advance_n.csv"), LATENCY_FIELDS)
+    d = by_algo(rows, "axisval", "mean_ns", "std_ns")
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for algo in ORDER:
         if algo not in d:
@@ -171,16 +169,16 @@ def extended_tick_plot():
 
 def extended_memory_plot():
     """Per-timer memory vs n, extended far past the main results' one-million-
-    timer ceiling (results_c/huge_scale/memory_n.csv, which stores total bytes,
-    divided by n for per-timer bytes to match Figure memory.png's units)."""
-    with open(os.path.join(HUGE_SCALE, "memory_n.csv")) as f:
-        rows = list(csv.DictReader(f))
+    timer ceiling (results_c/huge_full_sweep/memory_n.csv, which stores total
+    bytes, divided by n for per-timer bytes to match Figure memory.png's
+    units)."""
+    rows = read_headerless(os.path.join(HUGE_SWEEP, "memory_n.csv"), LATENCY_FIELDS)
     d = {}
     for r in rows:
-        n = float(r["n"])
+        n = float(r["axisval"])
         d.setdefault(r["algo"], ([], []))
         d[r["algo"]][0].append(n)
-        d[r["algo"]][1].append(float(r["mean_bytes"]) / n)
+        d[r["algo"]][1].append(float(r["mean_ns"]) / n)
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for algo in ORDER:
         if algo not in d:

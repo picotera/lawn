@@ -4,53 +4,40 @@
 #include "lawn2.h"
 #include <stdlib.h>
 
-#define BLK_BITS 12
-#define BLK_SIZE (1u << BLK_BITS)
-#define BLK_MASK (BLK_SIZE - 1)
-
 struct cts_store {
     lawn2       *l;
-    lawn2_node **blocks;   /* array of stable node blocks */
-    size_t       nblocks;
+    timer_store *st;
 };
-
-static lawn2_node *node_for(struct cts_store *s, uint64_t id) {
-    size_t bi = (size_t)(id >> BLK_BITS);
-    if (bi >= s->nblocks) {
-        size_t old = s->nblocks;
-        s->nblocks = bi + 1;
-        s->blocks = realloc(s->blocks, s->nblocks * sizeof *s->blocks);
-        for (size_t i = old; i < s->nblocks; i++)
-            s->blocks[i] = calloc(BLK_SIZE, sizeof(lawn2_node));
-    }
-    return &s->blocks[bi][id & BLK_MASK];
-}
 
 static cts_store *l2_create(void) {
     struct cts_store *s = calloc(1, sizeof *s);
     s->l = lawn2_new();
+    s->st = init_store();
     return s;
 }
 
 static void l2_destroy(cts_store *s) {
     lawn2_free(s->l);
-    for (size_t i = 0; i < s->nblocks; i++) free(s->blocks[i]);
-    free(s->blocks);
+    destroy_store(s->st);
     free(s);
 }
 
 static void l2_start(cts_store *s, uint64_t id, uint64_t ttl) {
-    lawn2_add(s->l, node_for(s, id), ttl);
+    lawn2_add(s->l, timer_for(s->st, id), ttl);
 }
 
 static int l2_stop(cts_store *s, uint64_t id) {
-    lawn2_node *n = node_for(s, id);
+    lawn2_timer *n = timer_for(s->st, id);
     if (!n->in_store) return 0;
     lawn2_del(s->l, n);
     return 1;
 }
 
-static uint64_t l2_tick(cts_store *s) { return lawn2_tick(s->l); }
+static uint64_t l2_tick(cts_store *s) { 
+    lawn2_timer *expired_head = NULL;
+    uint64_t count = lawn2_tick(s->l, &expired_head);
+    return count; 
+}
 static uint64_t l2_size(cts_store *s) { return lawn2_size(s->l); }
 
 const cts_vtable cts_lawn2_vtable = {
