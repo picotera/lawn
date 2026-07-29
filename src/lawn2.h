@@ -29,7 +29,7 @@ typedef struct lawn2_timer {
 typedef struct lawn2 lawn2;
 
 
-// ############### Caller Node Storage (optional) ####################
+// ############### Timeouts Storage (optional) ####################
 /*  This is an optional implementation of a minimal block based caller node (each representing  
  *  a single timer) storage for use with Lawn. Users are welcome to replace this implementation 
  *  with any other (more suitable for their needs) data structure for storing the nodes 
@@ -39,11 +39,11 @@ typedef struct lawn2 lawn2;
 typedef struct caller_state_store {
     lawn2_timer **blocks;   /* array of stable node blocks */
     size_t       nblocks;
-} store;
+} timer_store;
 
-store *init_store(void); /* Init a caller nodes store for a set timer nodes*/
-lawn2_timer *timer_for(store *s, uint64_t id); /* Init and store a caller node with a given ID in the provided store */
-void destroy_store(store *s); /* frees the caller nodes store */
+timer_store *init_store(void); /* Init a caller nodes store for a set timer nodes*/
+lawn2_timer *timer_for(timer_store *s, uint64_t id); /* Init and store a caller node with a given ID in the provided store */
+void destroy_store(timer_store *s); /* frees the caller nodes store */
 
 // ############## Timer Storage ####################
 

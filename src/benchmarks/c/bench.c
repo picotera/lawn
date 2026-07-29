@@ -558,15 +558,21 @@ int main(int argc, char **argv) {
         else if (!strcmp(argv[1], "inflection")) { run_inflection(dir); }
         else if (!strcmp(argv[1], "huge")) { run_sweeps(dir, true); }
         else if (!strcmp(argv[1], "single")) { return run_single(argc,  argv); }
+        else if (!strcmp(argv[1], "all")) {
+            run_sweeps(dir, false);
+            run_sweeps(dir, true);
+            run_distribution(dir);
+            run_inflection(dir);
+
+        }
         else { 
             printf("unrecognized option %s\n", argv[1]);
             return 1;
         }
     }
-    else { // just run everything
+    else { // just run a quick benchmark to see everything ok
         run_sweeps(dir, false);
         run_distribution(dir);
-        run_inflection(dir);
     }
     printf("done.\n");
     return 0;

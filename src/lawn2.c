@@ -30,7 +30,7 @@ struct lawn2 {
 #define BLK_SIZE (1u << BLK_BITS)
 #define BLK_MASK (BLK_SIZE - 1)
 
-lawn2_timer *timer_for(store *s, uint64_t id) {
+lawn2_timer *timer_for(timer_store *s, uint64_t id) {
     size_t block_index = (size_t)(id >> BLK_BITS);
     if (block_index >= s->nblocks) {
         size_t old = s->nblocks;
@@ -47,12 +47,12 @@ lawn2_timer *timer_for(store *s, uint64_t id) {
     return &s->blocks[block_index][id & BLK_MASK];
 }
 
-store *init_store(void) {
-    store *s = calloc(1, sizeof *s);
+timer_store *init_store(void) {
+    timer_store *s = calloc(1, sizeof *s);
     return s;
 }
 
-void destroy_store(store *s) {
+void destroy_store(timer_store *s) {
     for (size_t i = 0; i < s->nblocks; i++) free(s->blocks[i]);
     free(s->blocks);
     free(s);

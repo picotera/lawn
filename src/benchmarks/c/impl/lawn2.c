@@ -6,7 +6,7 @@
 
 struct cts_store {
     lawn2       *l;
-    store       *st;
+    timer_store *st;
 };
 
 static cts_store *l2_create(void) {

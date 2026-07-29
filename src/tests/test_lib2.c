@@ -20,7 +20,7 @@
 
 typedef struct test_state_store {
     lawn2       *l;
-    store       *st;
+    timer_store *st;
 } state;
 
 static state *init(void) {
