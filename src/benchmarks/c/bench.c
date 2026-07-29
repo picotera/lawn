@@ -224,11 +224,12 @@ static const char    *WORKLOAD_NAMES[]  = {"uniform", "bursty", "spread"};
 typedef struct { const char *name; measure_fn fn; size_t per_run_max; int is_mem; } op_t;
 
 static const op_t OPS[] = {
-    {"insert",       measure_insert, MAX_OPS / BATCH + 2, 0},
-    {"delete",       measure_delete, MAX_OPS / BATCH + 2, 0},
-    {"tick_advance", measure_tick,   TICKS / BATCH + 2,   0},
-    {"expiry",       measure_expiry, 2,                   0},
-    {"memory",       measure_memory, 1,                   1},
+    {"insert",       measure_insert,   MAX_OPS / BATCH + 2, 0},
+    {"delete",       measure_delete,   MAX_OPS / BATCH + 2, 0},
+    {"tick_advance", measure_tick,     TICKS / BATCH + 2,   0},
+    {"expiry",       measure_expiry,   2,                   0},
+    {"memory",       measure_memory,   1,                   1},
+    {"lifecycle",    measure_lifecycle,1,                   0},
 };
 
 static double free_and_inactive_bytes(void) {
