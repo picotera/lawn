@@ -5,7 +5,7 @@ CFLAGS  = -O2 -std=c11 -Wall -pthread \
 LDFLAGS = -lm
 
 HARNESS  = util.c
-ADAPTERS = impl/lawn.c impl/lawn2.c impl/wahern.c impl/naive.c
+ADAPTERS = impl/lawn.c impl/lawn2.c impl/wahern.c impl/naive.c impl/heap.c impl/linuxwheel.c
 DEPS     = ../../lawn.c ../../utils/hashmap.c \
            ../../../article/src/c/wheel/timeout.c ../../lawn2.c
 

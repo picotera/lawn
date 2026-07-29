@@ -16,6 +16,8 @@ const cts_vtable *const cts_algos[] = {
     &cts_lawn2_vtable,
     &cts_wahern_vtable,
     &cts_naive_vtable,
+    &cts_heap_vtable,
+    &cts_linuxwheel_vtable,
 };
 const int cts_nalgos = (int)(sizeof(cts_algos) / sizeof(cts_algos[0]));
 
