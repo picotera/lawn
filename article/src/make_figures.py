@@ -91,9 +91,13 @@ def inflection_plot():
     N; the per-tick columns in the same CSV are not plotted here."""
     rows = read("inflection.csv")
     # Keep only rows with a real lifecycle measurement (0 = not measured: the
-    # fixed_span pass, or an N skipped by the memory guard).
+    # fixed_span pass, or an N skipped by the memory guard). Drop t=1 (a single
+    # shared TTL): a degenerate edge case where the wheel is trivially cheap,
+    # covered separately by workload_expiry.png, that otherwise makes the
+    # large-N lines start low and then jump.
     rows = [r for r in rows
-            if float(r.get("lawn2_life_ns", 0) or 0) > 0
+            if int(r["t"]) > 1
+            and float(r.get("lawn2_life_ns", 0) or 0) > 0
             and float(r.get("wahern_life_ns", 0) or 0) > 0]
     ns = sorted({int(r["N"]) for r in rows})
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
@@ -343,7 +347,12 @@ def lifecycle_plot():
     Solid = mean, dashed = p99, to show both typical and tail cost in one
     plot. Extended further in Section VII.G once (results/
     lifecycle_n_huge.csv) once machine memory pressure allowed it."""
+    # Full population range: 1K-1M (lifecycle_n.csv) plus the extended
+    # 2M-200M sweep (lifecycle_n_huge.csv) when present. Both halves use the
+    # same fixed TTL span, so there is no density seam at the join.
     rows = read("lifecycle_n.csv")
+    if os.path.exists(os.path.join(RESULTS, "lifecycle_n_huge.csv")):
+        rows = rows + read("lifecycle_n_huge.csv")
     mean_d = by_algo(rows, "n", "mean_ns", "std_ns")
     p99_d = by_algo(rows, "n", "p99_ns")
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
@@ -363,7 +372,7 @@ def lifecycle_plot():
     ax.set_yscale("log")
     ax.set_xlabel("number of background timers")
     ax.set_ylabel("per-operation latency (ns)")
-    ax.set_title("Realistic mixed workload: mean (solid) vs p99 (dashed)")
+    ax.set_title("Realistic mixed workload across scale: mean (solid) vs p99 (dashed)")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(fontsize=7, ncol=2)
     fig.tight_layout()
