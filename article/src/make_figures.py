@@ -83,41 +83,47 @@ def axis_plot(fname, xcol, ycol, scol, xlabel, ylabel, title, out,
 
 
 def inflection_plot():
-    """The lifecycle-cost crossover: full mixed-workload (insert/delete/tick)
-    cost of Lawn2 vs the Timer Wheel, as the distinct-TTL count grows, at each
-    population N. Reads the lifecycle columns of inflection.csv (written by the
-    extended run_inflection for lawn2/wahern). Speedup = Wheel/Lawn2 on a log
-    y-axis so the parity crossing (the inflection point) is readable at every
-    N; the per-tick columns in the same CSV are not plotted here."""
-    rows = read("inflection.csv")
-    # Use p99 (typical per-op cost), not the mean: the wheel's mean is
-    # dominated by rare O(N/t) cascade stalls whose amortization is
-    # window-sensitive, so the mean-based ratio is spiky and (at short windows)
-    # spuriously favors Lawn2 at large N. p99 is window-insensitive and
-    # reproducible; the tail-stall advantage is reported separately via the max
-    # columns / prose. Keep only rows with a real lifecycle p99 (0 = the
-    # fixed_span pass or a memory-skipped N), and drop t=1 (a degenerate single
-    # shared TTL, covered by workload_expiry.png).
-    rows = [r for r in rows
-            if int(r["t"]) > 1
-            and float(r.get("lawn2_life_p99", 0) or 0) > 0
-            and float(r.get("wahern_life_p99", 0) or 0) > 0]
+    """Two-panel lifecycle crossover, Lawn2 vs Timer Wheel across distinct-TTL
+    count, one line per population N (reads inflection.csv's lifecycle columns).
+
+    Left (MEAN, amortized incl. the wheel's rare O(N/t) cascade stalls): Lawn2's
+    mean stays stable while the wheel's is inflated by stalls, so Lawn2's
+    mean-cost lead widens with scale, a stability benefit (max columns quantify
+    the stall magnitude in prose).
+
+    Right (P99, typical per-op cost, window-insensitive): the honest typical-cost
+    crossover, near t=20-100 and roughly scale-independent.
+
+    Both on log-log with a parity line; the two panels are the same data under
+    two cost metrics, so the mean's tail-driven optimism and the p99's tighter
+    boundary are read side by side."""
+    rows = [r for r in read("inflection.csv") if int(r["t"]) > 1]
     ns = sorted({int(r["N"]) for r in rows})
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    for N in ns:
-        sub = sorted((r for r in rows if int(r["N"]) == N), key=lambda r: int(r["t"]))
-        xs = [int(r["t"]) for r in sub]
-        ys = [float(r["wahern_life_p99"]) / float(r["lawn2_life_p99"]) for r in sub]
-        ax.plot(xs, ys, marker="o", markersize=4, label=f"N={N:,}")
-    ax.axhline(1.0, color="k", linestyle="--", linewidth=1,
-               label="parity (Lawn2 = Wheel)")
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("distinct-TTL count  t")
-    ax.set_ylabel("p99 speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
-    ax.set_title("Typical (p99) lifecycle cost: Lawn2 vs Timer Wheel across distinct-TTL count")
-    ax.grid(True, which="both", alpha=0.3)
-    ax.legend(fontsize=8)
+
+    def panel(ax, l2col, whcol, title):
+        for N in ns:
+            sub = sorted((r for r in rows if int(r["N"]) == N
+                          and float(r.get(l2col, 0) or 0) > 0
+                          and float(r.get(whcol, 0) or 0) > 0),
+                         key=lambda r: int(r["t"]))
+            if not sub:
+                continue
+            xs = [int(r["t"]) for r in sub]
+            ys = [float(r[whcol]) / float(r[l2col]) for r in sub]
+            ax.plot(xs, ys, marker="o", markersize=4, label=f"N={N:,}")
+        ax.axhline(1.0, color="k", linestyle="--", linewidth=1, label="parity")
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xlabel("distinct-TTL count  t")
+        ax.set_title(title, fontsize=10)
+        ax.grid(True, which="both", alpha=0.3)
+
+    fig, (axm, axp) = plt.subplots(1, 2, figsize=(11, 4.4))
+    panel(axm, "lawn2_life_ns", "wahern_life_ns", "Mean cost (amortized, incl. cascade stalls)")
+    panel(axp, "lawn2_life_p99", "wahern_life_p99", "Typical cost (p99)")
+    axm.set_ylabel("speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
+    axm.legend(fontsize=8)
+    fig.suptitle("Lifecycle cost: Lawn2 vs Timer Wheel across distinct-TTL count", fontsize=12)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "inflection.png"), dpi=130)
     plt.close(fig)
