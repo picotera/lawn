@@ -90,29 +90,32 @@ def inflection_plot():
     y-axis so the parity crossing (the inflection point) is readable at every
     N; the per-tick columns in the same CSV are not plotted here."""
     rows = read("inflection.csv")
-    # Keep only rows with a real lifecycle measurement (0 = not measured: the
-    # fixed_span pass, or an N skipped by the memory guard). Drop t=1 (a single
-    # shared TTL): a degenerate edge case where the wheel is trivially cheap,
-    # covered separately by workload_expiry.png, that otherwise makes the
-    # large-N lines start low and then jump.
+    # Use p99 (typical per-op cost), not the mean: the wheel's mean is
+    # dominated by rare O(N/t) cascade stalls whose amortization is
+    # window-sensitive, so the mean-based ratio is spiky and (at short windows)
+    # spuriously favors Lawn2 at large N. p99 is window-insensitive and
+    # reproducible; the tail-stall advantage is reported separately via the max
+    # columns / prose. Keep only rows with a real lifecycle p99 (0 = the
+    # fixed_span pass or a memory-skipped N), and drop t=1 (a degenerate single
+    # shared TTL, covered by workload_expiry.png).
     rows = [r for r in rows
             if int(r["t"]) > 1
-            and float(r.get("lawn2_life_ns", 0) or 0) > 0
-            and float(r.get("wahern_life_ns", 0) or 0) > 0]
+            and float(r.get("lawn2_life_p99", 0) or 0) > 0
+            and float(r.get("wahern_life_p99", 0) or 0) > 0]
     ns = sorted({int(r["N"]) for r in rows})
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for N in ns:
         sub = sorted((r for r in rows if int(r["N"]) == N), key=lambda r: int(r["t"]))
         xs = [int(r["t"]) for r in sub]
-        ys = [float(r["wahern_life_ns"]) / float(r["lawn2_life_ns"]) for r in sub]
+        ys = [float(r["wahern_life_p99"]) / float(r["lawn2_life_p99"]) for r in sub]
         ax.plot(xs, ys, marker="o", markersize=4, label=f"N={N:,}")
     ax.axhline(1.0, color="k", linestyle="--", linewidth=1,
                label="parity (Lawn2 = Wheel)")
     ax.set_xscale("log")
     ax.set_yscale("log")
     ax.set_xlabel("distinct-TTL count  t")
-    ax.set_ylabel("speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
-    ax.set_title("Lifecycle cost: Lawn2 vs Timer Wheel across distinct-TTL count")
+    ax.set_ylabel("p99 speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
+    ax.set_title("Typical (p99) lifecycle cost: Lawn2 vs Timer Wheel across distinct-TTL count")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(fontsize=8)
     fig.tight_layout()

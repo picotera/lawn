@@ -699,7 +699,9 @@ static void run_inflection(const char *dir, bool scale_span) {
      * running the heavy grid twice; the fixed_span pass writes 0 for them. */
     fprintf(f, "N,t,t_over_N,lawn_pertick_ns,lawn2_pertick_ns,wahern_pertick_ns,naive_pertick_ns,"
                "ratio_lawn_over_wahern,ratio_lawn2_over_wahern,"
-               "lawn2_life_ns,wahern_life_ns,ratio_wahern_over_lawn2_life\n");
+               "lawn2_life_ns,wahern_life_ns,ratio_wahern_over_lawn2_life,"
+               "lawn2_life_p99,wahern_life_p99,ratio_wahern_over_lawn2_life_p99,"
+               "lawn2_life_max,wahern_life_max\n");
 
     const cts_vtable *lawn = NULL, *lawn2 = NULL, *wahern = NULL, *naive = NULL;
     for (int a = 0; a < cts_nalgos; a++) {
@@ -734,17 +736,30 @@ static void run_inflection(const char *dir, bool scale_span) {
             double nl  = naive ? mean_tick_scan(naive, n, t, scale_span) : 0;
             double ratio  = ll / wl;
             double ratio2 = l2l / wl;
-            /* Full-lifecycle cost at population n (preload_n) and distinct t. */
+            /* Full-lifecycle cost at population n (preload_n) and distinct t.
+             * Record mean, p99, and max: the wheel's mean is dominated by rare
+             * O(N/t) cascade stalls (heavy-tailed, and window-sensitive since
+             * the stall period far exceeds the sampling window), so p99 is the
+             * robust typical-cost metric the crossover figure uses, while max
+             * documents the tail-stall magnitude Lawn2 never pays. */
             double l2_life = 0, wh_life = 0, ratio_life = 0;
+            double l2_p99 = 0, wh_p99 = 0, ratio_p99 = 0;
+            double l2_max = 0, wh_max = 0;
             if (life_ok) {
                 params_t lp = {FG_OPS, BASE_SPAN_HUGE, t, WL_UNIFORM, n};
-                l2_life = run_point(lawn2,  measure_lifecycle, lp, OP_PER_N).mean;
-                wh_life = run_point(wahern, measure_lifecycle, lp, OP_PER_N).mean;
+                agg_t a2 = run_point(lawn2,  measure_lifecycle, lp, OP_PER_N);
+                agg_t aw = run_point(wahern, measure_lifecycle, lp, OP_PER_N);
+                l2_life = a2.mean; wh_life = aw.mean;
+                l2_p99  = a2.p99;  wh_p99  = aw.p99;
+                l2_max  = a2.max;  wh_max  = aw.max;
                 ratio_life = l2_life > 0 ? wh_life / l2_life : 0;
+                ratio_p99  = l2_p99  > 0 ? wh_p99  / l2_p99  : 0;
             }
-            fprintf(f, "%zu,%llu,%.6g,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,%.2f,%.2f,%.4f\n",
+            fprintf(f, "%zu,%llu,%.6g,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,"
+                       "%.2f,%.2f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f\n",
                     n, (unsigned long long)t, (double)t / n, ll, l2l, wl, nl,
-                    ratio, ratio2, l2_life, wh_life, ratio_life);
+                    ratio, ratio2, l2_life, wh_life, ratio_life,
+                    l2_p99, wh_p99, ratio_p99, l2_max, wh_max);
             if (ratio_life > 0 && prev_ratio_life > 0 && !xover_life &&
                 ((prev_ratio_life - 1.0) * (ratio_life - 1.0) < 0)) {
                 double lt0 = log((double)prev_t), lt1 = log((double)t);
