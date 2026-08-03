@@ -798,6 +798,55 @@ static void run_inflection(const char *dir, bool scale_span) {
 }
 
 
+/* ---- lifecycle-inflection at a single population: the distinct-TTL
+ * lifecycle crossover (lawn2 vs wahern only) at one N, e.g. 100M, that the
+ * full run_inflection can't reach because its per-tick sweep would OOM on
+ * naive's scaled ring. Writes a mergeable inflection_life_<N>.csv that
+ * make_figures folds into the crossover plot as an extra N line. */
+static void run_life_inflection(const char *dir, size_t n) {
+    static const uint64_t TS[] = {1,2,5,10,20,50,100,200,500,1000,2000,5000,10000};
+    char path[512];
+    snprintf(path, sizeof path, "%s/inflection_life_%zu.csv", dir, n);
+    FILE *f = fopen(path, "w");
+    fprintf(f, "N,t,t_over_N,lawn2_life_ns,wahern_life_ns,ratio_wahern_over_lawn2_life,"
+               "lawn2_life_p99,wahern_life_p99,ratio_wahern_over_lawn2_life_p99,"
+               "lawn2_life_max,wahern_life_max\n");
+
+    const cts_vtable *lawn2 = NULL, *wahern = NULL;
+    for (int a = 0; a < cts_nalgos; a++) {
+        if (!strcmp(cts_algos[a]->name, "lawn2")) lawn2 = cts_algos[a];
+        if (!strcmp(cts_algos[a]->name, "wahern")) wahern = cts_algos[a];
+    }
+
+    double need_gb, budget_gb;
+    if (!memory_ok("lifecycle", lawn2->name, FG_OPS, n, &need_gb, &budget_gb) ||
+        !memory_ok("lifecycle", wahern->name, FG_OPS, n, &need_gb, &budget_gb)) {
+        printf("  lifecycle-inflection SKIP N=%zu (needs ~%.1fGB, safe budget ~%.1fGB)\n",
+               n, need_gb, budget_gb);
+        fclose(f);
+        return;
+    }
+
+    printf("lifecycle-inflection at N=%zu (lawn2 vs wahern):\n", n);
+    for (size_t ti = 0; ti < GET_SIZE(TS); ti++) {
+        uint64_t t = TS[ti];
+        if (t > n) continue;
+        params_t lp = {FG_OPS, BASE_SPAN_HUGE, t, WL_UNIFORM, n};
+        agg_t a2 = run_point(lawn2,  measure_lifecycle, lp, OP_PER_N);
+        agg_t aw = run_point(wahern, measure_lifecycle, lp, OP_PER_N);
+        double rmean = a2.mean > 0 ? aw.mean / a2.mean : 0;
+        double rp99  = a2.p99  > 0 ? aw.p99  / a2.p99  : 0;
+        fprintf(f, "%zu,%llu,%.6g,%.2f,%.2f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f\n",
+                n, (unsigned long long)t, (double)t / n,
+                a2.mean, aw.mean, rmean, a2.p99, aw.p99, rp99, a2.max, aw.max);
+        printf("    t=%llu\n", (unsigned long long)t);
+        fflush(f);
+    }
+    fclose(f);
+    printf("  wrote %s\n", path);
+}
+
+
 /* ---- distribution: affects of ttl distribution ---- */
 
 static void measure_distribution(const char* name, size_t ttl_count, uint64_t ttl_span, uint64_t distinct, FILE* f) {
@@ -918,6 +967,10 @@ int main(int argc, char **argv) {
                 run_inflection(dir, true);
                 run_inflection(dir, false);
             }
+        }
+        else if (!strcmp(argv[1], "inflection-life")) {
+            size_t n = argc >= 3 ? (size_t)strtoull(argv[2], NULL, 10) : 100000000;
+            run_life_inflection(dir, n);
         }
         else if (!strcmp(argv[1], "huge")) { run_sweeps(dir, true); }
         else if (!strcmp(argv[1], "single")) { return run_single(argc,  argv); }

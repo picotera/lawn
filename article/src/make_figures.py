@@ -97,7 +97,15 @@ def inflection_plot():
     Both on log-log with a parity line; the two panels are the same data under
     two cost metrics, so the mean's tail-driven optimism and the p99's tighter
     boundary are read side by side."""
-    rows = [r for r in read("inflection.csv") if int(r["t"]) > 1]
+    import glob
+    rows = list(read("inflection.csv"))
+    # Fold in any single-population lifecycle crossovers (e.g. N=100M) written
+    # by `bench inflection-life <N>` as inflection_life_<N>.csv; they carry the
+    # same lifecycle column names but no per-tick columns.
+    for extra in sorted(glob.glob(os.path.join(RESULTS, "inflection_life_*.csv"))):
+        with open(extra) as fh:
+            rows += list(csv.DictReader(fh))
+    rows = [r for r in rows if int(r["t"]) > 1]
     ns = sorted({int(r["N"]) for r in rows})
 
     def panel(ax, l2col, whcol, title):
