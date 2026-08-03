@@ -83,30 +83,32 @@ def axis_plot(fname, xcol, ycol, scol, xlabel, ylabel, title, out,
 
 
 def inflection_plot():
-    import matplotlib.ticker as mticker
-
+    """The lifecycle-cost crossover: full mixed-workload (insert/delete/tick)
+    cost of Lawn2 vs the Timer Wheel, as the distinct-TTL count grows, at each
+    population N. Reads the lifecycle columns of inflection.csv (written by the
+    extended run_inflection for lawn2/wahern). Speedup = Wheel/Lawn2 on a log
+    y-axis so the parity crossing (the inflection point) is readable at every
+    N; the per-tick columns in the same CSV are not plotted here."""
     rows = read("inflection.csv")
+    # Keep only rows with a real lifecycle measurement (0 = not measured: the
+    # fixed_span pass, or an N skipped by the memory guard).
+    rows = [r for r in rows
+            if float(r.get("lawn2_life_ns", 0) or 0) > 0
+            and float(r.get("wahern_life_ns", 0) or 0) > 0]
     ns = sorted({int(r["N"]) for r in rows})
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for N in ns:
-        # t_over_N is a fraction (0..1); plot as a percentage.
-        xs = [float(r["t_over_N"]) * 100 for r in rows if int(r["N"]) == N]
-        # Speedup = Wheel / Lawn2 (inverse of the raw cost ratio), so higher
-        # always means Lawn2 winning by more, rather than a ratio where the
-        # win region is below 1.
-        ys = [float(r["wahern_pertick_ns"]) / float(r["lawn2_pertick_ns"])
-              for r in rows if int(r["N"]) == N]
+        sub = sorted((r for r in rows if int(r["N"]) == N), key=lambda r: int(r["t"]))
+        xs = [int(r["t"]) for r in sub]
+        ys = [float(r["wahern_life_ns"]) / float(r["lawn2_life_ns"]) for r in sub]
         ax.plot(xs, ys, marker="o", markersize=4, label=f"N={N:,}")
     ax.axhline(1.0, color="k", linestyle="--", linewidth=1,
                label="parity (Lawn2 = Wheel)")
     ax.set_xscale("log")
-    # Vertical axis uses actual numbers on a linear scale rather than a log
-    # scale, at the reader's request, even though the ratio spans several
-    # orders of magnitude and small values compress near zero as a result.
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}%"))
-    ax.set_xlabel("distinct-TTL fraction  t/N (%)")
-    ax.set_ylabel("speedup  wahern (Timer Wheel) / Lawn2  (higher = Lawn2 wins by more)")
-    ax.set_title("Lawn2 per-tick cost vs Timer Wheel across the distinct-TTL fraction")
+    ax.set_yscale("log")
+    ax.set_xlabel("distinct-TTL count  t")
+    ax.set_ylabel("speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
+    ax.set_title("Lifecycle cost: Lawn2 vs Timer Wheel across distinct-TTL count")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(fontsize=8)
     fig.tight_layout()
