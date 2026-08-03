@@ -584,9 +584,13 @@ static void sweep_axis(const op_t *op, const char *axis, const char *dir, bool h
                 /* Lifecycle sweeps the background POPULATION (preload_n); the
                  * timed foreground op count stays fixed at FG_OPS, so the
                  * n-axis genuinely means "number of background timers" instead
-                 * of the foreground op count with a regime-switched population. */
+                 * of the foreground op count with a regime-switched population.
+                 * Use one fixed span across both the non-huge and huge halves
+                 * so the extended population curve has no density seam at the
+                 * baseline boundary. */
                 p.preload_n = pop;
                 p.n = FG_OPS;
+                p.ttl_span = BASE_SPAN_HUGE;
             } else {
                 p.n = pop;
             }
