@@ -40,7 +40,11 @@ static uint64_t l2_tick(cts_store *s) {
 }
 static uint64_t l2_size(cts_store *s) { return lawn2_size(s->l); }
 
+/* Jump the clock forward with no expiry processing (staggered preload keeps
+ * every deadline in the future, so nothing is due). */
+static void l2_advance(cts_store *s, uint64_t target) { lawn2_set_now(s->l, target); }
+
 const cts_vtable cts_lawn2_vtable = {
     "lawn2", l2_create, l2_destroy,
-    l2_start, l2_stop, l2_tick, l2_size,
+    l2_start, l2_stop, l2_tick, l2_size, l2_advance,
 };

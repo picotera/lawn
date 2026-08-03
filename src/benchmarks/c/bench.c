@@ -260,7 +260,35 @@ static size_t measure_lifecycle(const cts_vtable *vt, params_t p, double *out) {
 
     uint64_t *live = malloc((fg_id_base + p.n) * sizeof *live);
     size_t nlive = 0;
-    for (size_t i = 0; i < preload_timer_count; i++) { vt->start(s, i, preload_ttls[i]); live[nlive++] = i; }
+    /* Staggered preload: insert the background timers at spread arrival times
+     * instead of all at t=0. Bulk loading collapses every deadline onto the t
+     * distinct TTL values, so a wheel populates only ~t slots (its easy case,
+     * and specifically what let a single deadline's slot cascade catastrophic
+     * batches of ~N/t timers at once) while Lawn always has t buckets;
+     * staggering spreads deadlines across many slots (the realistic steady
+     * state a store actually runs under) without changing Lawn's bucket
+     * count. Verified this is the right call: bulk-loaded wahern showed
+     * artificial multi-millisecond cascade stalls (up to 49ms at N=10M) that
+     * vanish under staggering, while low-t points that looked like "no Lawn
+     * advantage" under bulk load (deadlines collapsed into few slots) show a
+     * real 3-11x Lawn2 win once arrivals are spread. The stagger window stays
+     * below the smallest deadline so nothing expires before measuring.
+     * Requires vt->advance (a cheap clock fast-forward, implemented by every
+     * adapter); falls back to bulk if some future adapter lacks it. */
+    int stagger = vt->advance != NULL;
+    uint64_t stagger_W = 0;
+    if (stagger) {
+        uint64_t min_bucket = preload_span / (preload_distinct ? preload_distinct : 1);
+        stagger_W = min_bucket > 2 ? min_bucket - 1 : 0;
+        stagger = stagger_W > 0;
+    }
+    for (size_t i = 0; i < preload_timer_count; i++) {
+        if (stagger)
+            vt->advance(s, (uint64_t)(((double)i / (double)preload_timer_count) * (double)stagger_W));
+        vt->start(s, i, preload_ttls[i]);
+        live[nlive++] = i;
+    }
+    if (stagger) vt->advance(s, stagger_W);   /* clock -> measurement start */
 
     rng_t r; rng_seed(&r, SEED);
     rng_t preload_r; rng_seed(&preload_r, SEED + 2);
@@ -793,54 +821,54 @@ static void run_inflection(const char *dir, bool scale_span) {
                        n, prev_ratio_life > 1 ? "beats" : "loses to");
         }
     }
-    fclose(f);
-    printf("  wrote %s\n", path);
-}
 
-
-/* ---- lifecycle-inflection at a single population: the distinct-TTL
- * lifecycle crossover (lawn2 vs wahern only) at one N, e.g. 100M, that the
- * full run_inflection can't reach because its per-tick sweep would OOM on
- * naive's scaled ring. Writes a mergeable inflection_life_<N>.csv that
- * make_figures folds into the crossover plot as an extra N line. */
-static void run_life_inflection(const char *dir, size_t n) {
-    static const uint64_t TS[] = {1,2,5,10,20,50,100,200,500,1000,2000,5000,10000};
-    char path[512];
-    snprintf(path, sizeof path, "%s/inflection_life_%zu.csv", dir, n);
-    FILE *f = fopen(path, "w");
-    fprintf(f, "N,t,t_over_N,lawn2_life_ns,wahern_life_ns,ratio_wahern_over_lawn2_life,"
-               "lawn2_life_p99,wahern_life_p99,ratio_wahern_over_lawn2_life_p99,"
-               "lawn2_life_max,wahern_life_max\n");
-
-    const cts_vtable *lawn2 = NULL, *wahern = NULL;
-    for (int a = 0; a < cts_nalgos; a++) {
-        if (!strcmp(cts_algos[a]->name, "lawn2")) lawn2 = cts_algos[a];
-        if (!strcmp(cts_algos[a]->name, "wahern")) wahern = cts_algos[a];
-    }
-
-    double need_gb, budget_gb;
-    if (!memory_ok("lifecycle", lawn2->name, FG_OPS, n, &need_gb, &budget_gb) ||
-        !memory_ok("lifecycle", wahern->name, FG_OPS, n, &need_gb, &budget_gb)) {
-        printf("  lifecycle-inflection SKIP N=%zu (needs ~%.1fGB, safe budget ~%.1fGB)\n",
-               n, need_gb, budget_gb);
-        fclose(f);
-        return;
-    }
-
-    printf("lifecycle-inflection at N=%zu (lawn2 vs wahern):\n", n);
-    for (size_t ti = 0; ti < GET_SIZE(TS); ti++) {
-        uint64_t t = TS[ti];
-        if (t > n) continue;
-        params_t lp = {FG_OPS, BASE_SPAN_HUGE, t, WL_UNIFORM, n};
-        agg_t a2 = run_point(lawn2,  measure_lifecycle, lp, OP_PER_N);
-        agg_t aw = run_point(wahern, measure_lifecycle, lp, OP_PER_N);
-        double rmean = a2.mean > 0 ? aw.mean / a2.mean : 0;
-        double rp99  = a2.p99  > 0 ? aw.p99  / a2.p99  : 0;
-        fprintf(f, "%zu,%llu,%.6g,%.2f,%.2f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f\n",
-                n, (unsigned long long)t, (double)t / n,
-                a2.mean, aw.mean, rmean, a2.p99, aw.p99, rp99, a2.max, aw.max);
-        printf("    t=%llu\n", (unsigned long long)t);
-        fflush(f);
+    /* Lifecycle-only extension at a larger population (100M) than the
+     * per-tick sweep can reach: mean_tick_scan's scaled ttl_span would make
+     * naive's ring OOM at this N, so this measures lawn2/wahern lifecycle
+     * cost only, leaving the per-tick columns at 0 for these rows. */
+    if (scale_span) {
+        static const size_t LIFECYCLE_EXTRA_NS[] = {100000000};
+        for (size_t ei = 0; ei < GET_SIZE(LIFECYCLE_EXTRA_NS); ei++) {
+            size_t n = LIFECYCLE_EXTRA_NS[ei];
+            double need_gb, budget_gb;
+            bool life_ok = memory_ok("lifecycle", lawn2->name, FG_OPS, n, &need_gb, &budget_gb) &&
+                           memory_ok("lifecycle", wahern->name, FG_OPS, n, &need_gb, &budget_gb);
+            if (!life_ok) {
+                printf("  lifecycle SKIP N=%zu (needs ~%.1fGB, safe budget ~%.1fGB)\n",
+                       n, need_gb, budget_gb);
+                continue;
+            }
+            printf("lifecycle-only at N=%zu (lawn2 vs wahern):\n", n);
+            double prev_ratio_life = 0, prev_t = 0, xover_life = 0;
+            for (size_t ti = 0; ti < GET_SIZE(TS); ti++) {
+                uint64_t t = TS[ti];
+                if (t > n) continue;
+                params_t lp = {FG_OPS, BASE_SPAN_HUGE, t, WL_UNIFORM, n};
+                agg_t a2 = run_point(lawn2,  measure_lifecycle, lp, OP_PER_N);
+                agg_t aw = run_point(wahern, measure_lifecycle, lp, OP_PER_N);
+                double ratio_life = a2.mean > 0 ? aw.mean / a2.mean : 0;
+                double ratio_p99  = a2.p99  > 0 ? aw.p99  / a2.p99  : 0;
+                fprintf(f, "%zu,%llu,%.6g,0,0,0,0,0,0,%.2f,%.2f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f\n",
+                        n, (unsigned long long)t, (double)t / n,
+                        a2.mean, aw.mean, ratio_life, a2.p99, aw.p99, ratio_p99, a2.max, aw.max);
+                if (ratio_life > 0 && prev_ratio_life > 0 && !xover_life &&
+                    ((prev_ratio_life - 1.0) * (ratio_life - 1.0) < 0)) {
+                    double lt0 = log((double)prev_t), lt1 = log((double)t);
+                    double lr0 = log(prev_ratio_life), lr1 = log(ratio_life);
+                    double frac = (0.0 - lr0) / (lr1 - lr0);
+                    xover_life = exp(lt0 + frac * (lt1 - lt0));
+                }
+                if (ratio_life > 0) prev_ratio_life = ratio_life;
+                prev_t = (double)t;
+                printf("    t=%llu\n", (unsigned long long)t);
+                fflush(f);
+            }
+            if (xover_life)
+                printf("  N=%zu: lawn2 lifecycle crossover t*=%.0f (t/N=%.2e)\n", n, xover_life, xover_life / n);
+            else
+                printf("  N=%zu: lawn2 lifecycle %s wahern across the whole range\n",
+                       n, prev_ratio_life > 1 ? "beats" : "loses to");
+        }
     }
     fclose(f);
     printf("  wrote %s\n", path);
@@ -967,10 +995,6 @@ int main(int argc, char **argv) {
                 run_inflection(dir, true);
                 run_inflection(dir, false);
             }
-        }
-        else if (!strcmp(argv[1], "inflection-life")) {
-            size_t n = argc >= 3 ? (size_t)strtoull(argv[2], NULL, 10) : 100000000;
-            run_life_inflection(dir, n);
         }
         else if (!strcmp(argv[1], "huge")) { run_sweeps(dir, true); }
         else if (!strcmp(argv[1], "single")) { return run_single(argc,  argv); }

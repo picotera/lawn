@@ -136,7 +136,12 @@ static uint64_t lw_tick(cts_store *s) {
 
 static uint64_t lw_size(cts_store *s) { return s->live; }
 
+/* Jump the clock forward with no expiry/cascade processing (used for a
+ * staggered preload, where target stays below every live deadline so
+ * nothing is due and no level boundary is crossed). */
+static void lw_advance(cts_store *s, uint64_t target) { s->now = target; }
+
 const cts_vtable cts_linuxwheel_vtable = {
     "linuxwheel", lw_create, lw_destroy,
-    lw_start, lw_stop, lw_tick, lw_size,
+    lw_start, lw_stop, lw_tick, lw_size, lw_advance,
 };

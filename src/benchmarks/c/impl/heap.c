@@ -104,7 +104,11 @@ static uint64_t heap_tick(cts_store *s) {
 
 static uint64_t heap_size(cts_store *s) { return s->len; }
 
+/* Jump the clock forward with no expiry processing (used for a staggered
+ * preload, where target stays below every live deadline so nothing is due). */
+static void heap_advance(cts_store *s, uint64_t target) { s->now = target; }
+
 const cts_vtable cts_heap_vtable = {
     "heap", heap_create, heap_destroy,
-    heap_start, heap_stop, heap_tick, heap_size,
+    heap_start, heap_stop, heap_tick, heap_size, heap_advance,
 };
