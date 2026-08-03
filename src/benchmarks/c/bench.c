@@ -37,6 +37,12 @@
 #define BASE_N_HUGE (10 * 1000 * 1000)
 #define BASE_SPAN_HUGE 65536
 
+/* Fixed count of timed foreground ops for the lifecycle measurements whose
+ * population is set separately via p.preload_n (the extended inflection sweep
+ * and the lifecycle n-axis sweep): keeps the op count constant so only the
+ * background population and distinct-TTL count vary. */
+#define FG_OPS 5000
+
 typedef struct {
     size_t   n;
     uint64_t ttl_span;
@@ -511,6 +517,12 @@ static double lifecycle_extra_bytes(const char *algo, size_t n, uint64_t preload
 static int memory_ok(const char *op, const char *algo, size_t n, uint64_t preload_n, double *need_gb_out, double *budget_gb_out) {
     double need = (bytes_per_timer_estimate(algo) + 16.0) * (double)n;
     if (!strcmp(op, "lifecycle")) {
+        /* The store holds ~the background population, not the (fixed, small)
+         * foreground op count n, so size the base estimate off the population
+         * (preload_n, or the regime default when unset). */
+        double pop = preload_n ? (double)preload_n
+                   : (n >= (size_t)(10 * BASE_N) ? (double)BASE_N_HUGE : (double)BASE_N);
+        need = (bytes_per_timer_estimate(algo) + 16.0) * pop;
         need += lifecycle_extra_bytes(algo, n, preload_n);
     }
     double avail = free_and_inactive_bytes();
@@ -564,16 +576,21 @@ static void sweep_axis(const op_t *op, const char *axis, const char *dir, bool h
     for (size_t vi = 0; vi < nvals; vi++) {
         params_t p = base_params;
         char valstr[32];
-        if (!strcmp(axis, "n"))   
+        if (!strcmp(axis, "n"))
         {
-            if (huge) {
-                p.n = 1000 * 1000 * N_VALS_HUGE[vi];
+            size_t pop = huge ? (size_t)(1000 * 1000 * N_VALS_HUGE[vi])
+                              : (size_t)(1000 * N_VALS[vi]);
+            if (!strcmp(op->name, "lifecycle")) {
+                /* Lifecycle sweeps the background POPULATION (preload_n); the
+                 * timed foreground op count stays fixed at FG_OPS, so the
+                 * n-axis genuinely means "number of background timers" instead
+                 * of the foreground op count with a regime-switched population. */
+                p.preload_n = pop;
+                p.n = FG_OPS;
+            } else {
+                p.n = pop;
             }
-            else {
-                p.n = 1000 * N_VALS[vi];
-            }
-            
-            snprintf(valstr, 32, "%zu", p.n);
+            snprintf(valstr, 32, "%zu", pop);
         }
         else if (!strcmp(axis, "ttl_span")){ 
             p.ttl_span = SPAN_VALS[vi]; 
@@ -666,13 +683,19 @@ static double mean_tick_scan(const cts_vtable *vt, size_t n, uint64_t t, bool sc
 }
 
 static void run_inflection(const char *dir, bool scale_span) {
-    static const size_t   NS[] = {10000, 100000, 1000000, 10000000};
+    static const size_t   NS[] = {1000, 10000, 100000, 1000000, 10000000};
     static const uint64_t TS[] = {1,2,5,10,20,50,100,200,500,1000,2000,5000,10000};
     char path[512];
     snprintf(path, sizeof path, "%s/inflection%s.csv", dir, scale_span ? "" : "_fixed_span");
     FILE *f = fopen(path, "w");
+    /* Per-tick (tick_scan) crossover columns, plus the full-lifecycle crossover
+     * columns (lawn2/wahern only): the lifecycle op is the mixed insert/delete/
+     * tick workload measured at population N (via preload_n) and distinct-TTL
+     * count t. Lifecycle is measured only in the scale_span pass to avoid
+     * running the heavy grid twice; the fixed_span pass writes 0 for them. */
     fprintf(f, "N,t,t_over_N,lawn_pertick_ns,lawn2_pertick_ns,wahern_pertick_ns,naive_pertick_ns,"
-               "ratio_lawn_over_wahern,ratio_lawn2_over_wahern\n");
+               "ratio_lawn_over_wahern,ratio_lawn2_over_wahern,"
+               "lawn2_life_ns,wahern_life_ns,ratio_wahern_over_lawn2_life\n");
 
     const cts_vtable *lawn = NULL, *lawn2 = NULL, *wahern = NULL, *naive = NULL;
     for (int a = 0; a < cts_nalgos; a++) {
@@ -682,10 +705,22 @@ static void run_inflection(const char *dir, bool scale_span) {
         if (!strcmp(cts_algos[a]->name, "naive")) naive = cts_algos[a];
     }
 
-    printf("inflection (tick_scan vs wahern; crossover reported for lawn2):\n");
-    for (size_t ni = 0; ni < 4; ni++) {
+    printf("inflection (tick_scan + lifecycle vs wahern; crossover reported for lawn2):\n");
+    for (size_t ni = 0; ni < GET_SIZE(NS); ni++) {
         size_t n = NS[ni];
+        /* Lifecycle memory need depends on (FG_OPS, n) only, not t, so check
+         * once per N. If it fails, lifecycle columns stay 0 for this N. */
+        bool life_ok = false;
+        if (scale_span) {
+            double need_gb, budget_gb;
+            life_ok = memory_ok("lifecycle", lawn2->name, FG_OPS, n, &need_gb, &budget_gb) &&
+                      memory_ok("lifecycle", wahern->name, FG_OPS, n, &need_gb, &budget_gb);
+            if (!life_ok)
+                printf("  lifecycle SKIP N=%zu (needs ~%.1fGB, safe budget ~%.1fGB)\n",
+                       n, need_gb, budget_gb);
+        }
         double prev_ratio2 = 0, prev_t = 0, xover2 = 0;
+        double prev_ratio_life = 0, xover_life = 0;
         for (size_t ti = 0; ti < sizeof TS / sizeof TS[0]; ti++) {
             uint64_t t = TS[ti];
             if (t > n || t > 10000) continue;
@@ -695,9 +730,25 @@ static void run_inflection(const char *dir, bool scale_span) {
             double nl  = naive ? mean_tick_scan(naive, n, t, scale_span) : 0;
             double ratio  = ll / wl;
             double ratio2 = l2l / wl;
-            fprintf(f, "%zu,%llu,%.6g,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f\n",
+            /* Full-lifecycle cost at population n (preload_n) and distinct t. */
+            double l2_life = 0, wh_life = 0, ratio_life = 0;
+            if (life_ok) {
+                params_t lp = {FG_OPS, BASE_SPAN_HUGE, t, WL_UNIFORM, n};
+                l2_life = run_point(lawn2,  measure_lifecycle, lp, OP_PER_N).mean;
+                wh_life = run_point(wahern, measure_lifecycle, lp, OP_PER_N).mean;
+                ratio_life = l2_life > 0 ? wh_life / l2_life : 0;
+            }
+            fprintf(f, "%zu,%llu,%.6g,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,%.2f,%.2f,%.4f\n",
                     n, (unsigned long long)t, (double)t / n, ll, l2l, wl, nl,
-                    ratio, ratio2);
+                    ratio, ratio2, l2_life, wh_life, ratio_life);
+            if (ratio_life > 0 && prev_ratio_life > 0 && !xover_life &&
+                ((prev_ratio_life - 1.0) * (ratio_life - 1.0) < 0)) {
+                double lt0 = log((double)prev_t), lt1 = log((double)t);
+                double lr0 = log(prev_ratio_life), lr1 = log(ratio_life);
+                double frac = (0.0 - lr0) / (lr1 - lr0);
+                xover_life = exp(lt0 + frac * (lt1 - lt0));
+            }
+            if (ratio_life > 0) prev_ratio_life = ratio_life;
             if (prev_t > 0 && !xover2 &&
                 ((prev_ratio2 - 1.0) * (ratio2 - 1.0) < 0)) {
                 double lt0 = log((double)prev_t), lt1 = log((double)t);
@@ -710,10 +761,18 @@ static void run_inflection(const char *dir, bool scale_span) {
             fflush(f);
         }
         if (xover2)
-            printf("  N=%zu: lawn2 crossover t*=%.0f (t/N=%.2e)\n", n, xover2, xover2 / n);
+            printf("  N=%zu: lawn2 tick_scan crossover t*=%.0f (t/N=%.2e)\n", n, xover2, xover2 / n);
         else
-            printf("  N=%zu: lawn2 %s wahern across the whole range\n",
+            printf("  N=%zu: lawn2 tick_scan %s wahern across the whole range\n",
                    n, prev_ratio2 < 1 ? "beats" : "loses to");
+        if (scale_span && life_ok) {
+            if (xover_life)
+                printf("  N=%zu: lawn2 lifecycle crossover t*=%.0f (t/N=%.2e)\n",
+                       n, xover_life, xover_life / n);
+            else
+                printf("  N=%zu: lawn2 lifecycle %s wahern across the whole range\n",
+                       n, prev_ratio_life > 1 ? "beats" : "loses to");
+        }
     }
     fclose(f);
     printf("  wrote %s\n", path);
