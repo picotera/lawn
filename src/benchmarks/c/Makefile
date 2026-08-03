@@ -1,6 +1,6 @@
 # C timer-store benchmark suite (macOS/clang; portable C11).
 CC      = cc
-CFLAGS  = -O2 -std=c11 -Wall -pthread \
+CFLAGS  = -O2 -std=c11 -Wall -Wextra -pthread \
           -I. -I../.. -I../../utils -I../../../article/src/c/wheel \
           -DWHEEL_NUM=6
 LDFLAGS = -lm

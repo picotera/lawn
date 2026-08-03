@@ -353,7 +353,7 @@ static int warmup_for(size_t n) { return n >= (10 * BASE_N) ? 1 : 2; }
 static agg_t run_point(const cts_vtable *vt, measure_fn fn, params_t p, size_t per_run_max) {
     int runs = runs_for(p.n), warmup = warmup_for(p.n);
 
-    per_run_max = (per_run_max == OP_PER_N) ? p.n : per_run_max;
+    per_run_max = (per_run_max == (size_t)OP_PER_N) ? p.n : per_run_max;
     size_t buf_bytes = per_run_max * (size_t)runs * sizeof(double);
 
     /* Shared memory: the sample buffer plus one size_t for the real sample
@@ -543,7 +543,7 @@ static void sweep_axis(const op_t *op, const char *axis, const char *dir, bool h
         header(pf, "n", 1);
     }
 
-    params_t base_params = BASE_PARAMS;
+    params_t base_params = {BASE_N, BASE_SPAN, 100, WL_UNIFORM, 0};
     if (huge) {
         base_params.n = BASE_N_HUGE;
         base_params.ttl_span= BASE_SPAN_HUGE;
@@ -653,7 +653,7 @@ static double mean_tick_scan(const cts_vtable *vt, size_t n, uint64_t t, bool sc
     } else {
         ttl_span = 10000;
     }
-    params_t p = {n, ttl_span, t, WL_UNIFORM};
+    params_t p = {n, ttl_span, t, WL_UNIFORM, 0};
     int runs = n >= (10 * BASE_N) ? 3 : 5, warmup = 1;
     double *buf = malloc(TICK_SCAN_SAMPLES * sizeof *buf);
     double sum = 0; size_t count = 0;
@@ -705,7 +705,7 @@ static void run_inflection(const char *dir, bool scale_span) {
                 double frac = (0.0 - lr0) / (lr1 - lr0);
                 xover2 = exp(lt0 + frac * (lt1 - lt0));
             }
-            printf("    distinct TTLs=%zu\n", t);
+            printf("    distinct TTLs=%llu\n", (unsigned long long)t);
             prev_ratio2 = ratio2; prev_t = (double)t;
             fflush(f);
         }
@@ -723,7 +723,7 @@ static void run_inflection(const char *dir, bool scale_span) {
 /* ---- distribution: affects of ttl distribution ---- */
 
 static void measure_distribution(const char* name, size_t ttl_count, uint64_t ttl_span, uint64_t distinct, FILE* f) {
-    params_t dist_param = {ttl_count, ttl_span, distinct, WL_UNIFORM};
+    params_t dist_param = {ttl_count, ttl_span, distinct, WL_UNIFORM, 0};
     printf("--- %s ---\n", name);
     for (int a = 0; a < cts_nalgos; a++) {
         agg_t insert_result = run_point(cts_algos[a], measure_insert, dist_param, MAX_OPS / BATCH + 2);
