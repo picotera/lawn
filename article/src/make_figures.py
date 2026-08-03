@@ -26,12 +26,18 @@ BASE_N_HUGE = 10_000_000
 
 # consistent styling per algorithm
 STYLE = {
-    "lawn":    ("Lawn (reference)", "#888888", "o"),
-    "lawn2":   ("Lawn2 (optimized)", "#1f77b4", "s"),
-    "wahern":  ("Timer Wheel",       "#ff7f0e", "^"),
-    "naive":   ("Naive ring",        "#2ca02c", "D"),
+    "lawn":       ("Lawn (reference)",       "#888888", "o"),
+    "lawn2":      ("Lawn2 (optimized)",      "#1f77b4", "s"),
+    "wahern":     ("Timer Wheel",            "#ff7f0e", "^"),
+    "naive":      ("Naive ring",             "#2ca02c", "D"),
+    "heap":       ("Binary heap",            "#9467bd", "v"),
+    "linuxwheel": ("Non-cascading wheel",    "#d62728", "*"),
 }
 ORDER = ["lawn", "lawn2", "wahern", "naive"]
+# Adapters added later, to test the wheel-generalization and mixed-workload
+# questions. Kept out of ORDER (and so out of every other figure below) to
+# keep the paper's main Lawn-vs-wheel-vs-naive story uncluttered.
+ORDER_ALL = ORDER + ["heap", "linuxwheel"]
 
 
 def read(fname):
@@ -88,7 +94,7 @@ def inflection_plot():
         # Speedup = Wheel / Lawn2 (inverse of the raw cost ratio), so higher
         # always means Lawn2 winning by more, rather than a ratio where the
         # win region is below 1.
-        ys = [float(r["wahern_life_ns"]) / float(r["lawn2_life_ns"])
+        ys = [float(r["wahern_pertick_ns"]) / float(r["lawn2_pertick_ns"])
               for r in rows if int(r["N"]) == N]
         ax.plot(xs, ys, marker="o", markersize=4, label=f"N={N:,}")
     ax.axhline(1.0, color="k", linestyle="--", linewidth=1,
@@ -99,8 +105,8 @@ def inflection_plot():
     # orders of magnitude and small values compress near zero as a result.
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}%"))
     ax.set_xlabel("distinct-TTL fraction  t/N (%)")
-    ax.set_ylabel("speedup  Timer Wheel / Lawn2  (higher = Lawn2 wins by more)")
-    ax.set_title("Crossover: Lawn2 wins below t/N ~ 1-5%, loses above")
+    ax.set_ylabel("speedup  wahern (Timer Wheel) / Lawn2  (higher = Lawn2 wins by more)")
+    ax.set_title("Lawn2 per-tick cost vs Timer Wheel across the distinct-TTL fraction")
     ax.grid(True, which="both", alpha=0.3)
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -327,6 +333,78 @@ def density_vs_n_plot():
     print("wrote density_vs_n.png")
 
 
+def lifecycle_plot():
+    """Realistic mixed-workload latency vs n, main baseline (results/
+    lifecycle_n.csv, 1K-1M): pre-fills n background timers, then times a
+    fixed sequence of randomly interleaved insert/delete/tick operations,
+    unlike every other figure here, which isolates one operation type.
+    Solid = mean, dashed = p99, to show both typical and tail cost in one
+    plot. Extended further in Section VII.G once (results/
+    lifecycle_n_huge.csv) once machine memory pressure allowed it."""
+    rows = read("lifecycle_n.csv")
+    mean_d = by_algo(rows, "n", "mean_ns", "std_ns")
+    p99_d = by_algo(rows, "n", "p99_ns")
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    for algo in ORDER_ALL:
+        if algo not in mean_d:
+            continue
+        label, color, marker = STYLE[algo]
+        x, y, s = mean_d[algo]
+        pts = sorted(zip(x, y, s)); x, y, s = zip(*pts)
+        ax.errorbar(x, y, yerr=s, marker=marker, color=color, linestyle="-",
+                    capsize=2, markersize=5, linewidth=1.3, label=f"{label}")
+        xp, yp, _ = p99_d[algo]
+        ptsp = sorted(zip(xp, yp)); xp, yp = zip(*ptsp)
+        ax.plot(xp, yp, marker=marker, color=color, linestyle="--",
+                markersize=4, linewidth=1.0, alpha=0.6)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("number of background timers")
+    ax.set_ylabel("per-operation latency (ns)")
+    ax.set_title("Realistic mixed workload: mean (solid) vs p99 (dashed)")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "lifecycle.png"), dpi=130)
+    plt.close(fig)
+    print("wrote lifecycle.png")
+
+
+def extended_lifecycle_plot():
+    """Realistic mixed-workload latency vs n, extended to one hundred
+    million background timers (results/lifecycle_n.csv +
+    lifecycle_n_huge.csv). Same mean (solid) / p99 (dashed) convention as
+    Figure~lifecycle. Confirms the main-baseline finding holds at scale:
+    every implementation except the cascading wheel stays flat."""
+    rows = read("lifecycle_n.csv") + read("lifecycle_n_huge.csv")
+    mean_d = by_algo(rows, "n", "mean_ns", "std_ns")
+    p99_d = by_algo(rows, "n", "p99_ns")
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    for algo in ORDER_ALL:
+        if algo not in mean_d:
+            continue
+        label, color, marker = STYLE[algo]
+        x, y, s = mean_d[algo]
+        pts = sorted(zip(x, y, s)); x, y, s = zip(*pts)
+        ax.errorbar(x, y, yerr=s, marker=marker, color=color, linestyle="-",
+                    capsize=2, markersize=4, linewidth=1.2, label=f"{label}")
+        xp, yp, _ = p99_d[algo]
+        ptsp = sorted(zip(xp, yp)); xp, yp = zip(*ptsp)
+        ax.plot(xp, yp, marker=marker, color=color, linestyle="--",
+                markersize=3, linewidth=0.9, alpha=0.6)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("number of background timers (extended past 1M)")
+    ax.set_ylabel("per-operation latency (ns)")
+    ax.set_title("Realistic mixed workload to 200M: mean (solid) vs p99 (dashed)")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "extended_lifecycle.png"), dpi=130)
+    plt.close(fig)
+    print("wrote extended_lifecycle.png")
+
+
 def main():
     axis_plot("insert_n.csv", "n", "mean_ns", "std_ns",
               "number of timers", "insert latency (ns)",
@@ -348,6 +426,8 @@ def main():
     density_vs_n_plot()
     naive_overflow_scale_plot()
     workload_expiry_plot()
+    lifecycle_plot()
+    extended_lifecycle_plot()
     print("done")
 
 
