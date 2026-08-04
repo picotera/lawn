@@ -421,19 +421,6 @@ static agg_t run_point(const cts_vtable *vt, measure_fn fn, params_t p, size_t p
     waitpid(pid, &status, 0);
     size_t total = (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? *total_out : 0;
 
-    /* Diagnostic-only hook, gated by an env var, zero cost when unset: dumps
-     * every raw post-warmup sample (one per line) to a file, for exploring a
-     * distribution directly (e.g. a violin plot) instead of only its
-     * aggregate. Not read by any committed figure. */
-    const char *dump_path = getenv("RAW_DUMP_FILE");
-    if (dump_path && total > 0) {
-        FILE *df = fopen(dump_path, "w");
-        if (df) {
-            for (size_t i = 0; i < total; i++) fprintf(df, "%.6f\n", buf[i]);
-            fclose(df);
-        }
-    }
-
     agg_t a = aggregate(buf, total);
 
     munmap(shm, buf_bytes + sizeof(size_t));
