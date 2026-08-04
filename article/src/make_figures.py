@@ -84,45 +84,66 @@ def axis_plot(fname, xcol, ycol, scol, xlabel, ylabel, title, out,
 
 def inflection_plot():
     """Two-panel lifecycle crossover, Lawn2 vs Timer Wheel across distinct-TTL
-    count, one line per population N (reads inflection.csv's lifecycle columns).
+    count, one color per population N (reads inflection.csv's lifecycle columns).
 
-    Left (MEAN, amortized incl. the wheel's rare O(N/t) cascade stalls): Lawn2's
-    mean stays stable while the wheel's is inflated by stalls, so Lawn2's
-    mean-cost lead widens with scale, a stability benefit (max columns quantify
-    the stall magnitude in prose).
+    Left (RAW mean latency, ns, not a ratio): Lawn2 (solid) and the Timer Wheel
+    (dashed) plotted directly. A Wheel/Lawn2 speedup ratio amplifies noise
+    whenever the (already small) Lawn2 denominator swings a little, which is
+    exactly what made the ratio-based mean panel zigzag; the raw numbers are
+    the more honest view of that noise.
 
     Right (P99, typical per-op cost, window-insensitive): the honest typical-cost
-    crossover, near t=20-100 and roughly scale-independent.
-
-    Both on log-log with a parity line; the two panels are the same data under
-    two cost metrics, so the mean's tail-driven optimism and the p99's tighter
-    boundary are read side by side."""
+    crossover, plotted as a speedup ratio (Wheel/Lawn2) since p99 is smooth
+    enough that the ratio reads cleanly."""
     rows = [r for r in read("inflection.csv") if int(r["t"]) > 1]
     ns = sorted({int(r["N"]) for r in rows})
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
-    def panel(ax, l2col, whcol, title):
-        for N in ns:
-            sub = sorted((r for r in rows if int(r["N"]) == N
-                          and float(r.get(l2col, 0) or 0) > 0
-                          and float(r.get(whcol, 0) or 0) > 0),
-                         key=lambda r: int(r["t"]))
-            if not sub:
-                continue
-            xs = [int(r["t"]) for r in sub]
-            ys = [float(r[whcol]) / float(r[l2col]) for r in sub]
-            ax.plot(xs, ys, marker="o", markersize=4, label=f"N={N:,}")
-        ax.axhline(1.0, color="k", linestyle="--", linewidth=1, label="parity")
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("distinct-TTL count  t")
-        ax.set_title(title, fontsize=10)
-        ax.grid(True, which="both", alpha=0.3)
+    fig, (axm, axp) = plt.subplots(1, 2, figsize=(12, 4.6))
 
-    fig, (axm, axp) = plt.subplots(1, 2, figsize=(11, 4.4))
-    panel(axm, "lawn2_life_ns", "wahern_life_ns", "Mean cost (amortized, incl. cascade stalls)")
-    panel(axp, "lawn2_life_p99", "wahern_life_p99", "Typical cost (p99)")
-    axm.set_ylabel("speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
+    # Left: raw mean latency, Lawn2 solid vs Wheel dashed, one color per N.
+    for i, N in enumerate(ns):
+        color = color_cycle[i % len(color_cycle)]
+        sub = sorted((r for r in rows if int(r["N"]) == N
+                      and float(r.get("lawn2_life_ns", 0) or 0) > 0
+                      and float(r.get("wahern_life_ns", 0) or 0) > 0),
+                     key=lambda r: int(r["t"]))
+        if not sub:
+            continue
+        xs = [int(r["t"]) for r in sub]
+        l2 = [float(r["lawn2_life_ns"]) for r in sub]
+        wh = [float(r["wahern_life_ns"]) for r in sub]
+        axm.plot(xs, l2, marker="o", markersize=4, color=color, linestyle="-", label=f"N={N:,}")
+        axm.plot(xs, wh, marker="o", markersize=4, color=color, linestyle="--")
+    axm.set_xscale("log")
+    axm.set_yscale("log")
+    axm.set_xlabel("distinct-TTL count  t")
+    axm.set_ylabel("lifecycle latency (ns)")
+    axm.set_title("Raw mean latency: Lawn2 (solid) vs Timer Wheel (dashed)", fontsize=10)
+    axm.grid(True, which="both", alpha=0.3)
     axm.legend(fontsize=8)
+
+    # Right: p99 typical-cost speedup ratio, one line per N.
+    for i, N in enumerate(ns):
+        color = color_cycle[i % len(color_cycle)]
+        sub = sorted((r for r in rows if int(r["N"]) == N
+                      and float(r.get("lawn2_life_p99", 0) or 0) > 0
+                      and float(r.get("wahern_life_p99", 0) or 0) > 0),
+                     key=lambda r: int(r["t"]))
+        if not sub:
+            continue
+        xs = [int(r["t"]) for r in sub]
+        ys = [float(r["wahern_life_p99"]) / float(r["lawn2_life_p99"]) for r in sub]
+        axp.plot(xs, ys, marker="o", markersize=4, color=color, label=f"N={N:,}")
+    axp.axhline(1.0, color="k", linestyle="--", linewidth=1, label="parity")
+    axp.set_xscale("log")
+    axp.set_yscale("log")
+    axp.set_xlabel("distinct-TTL count  t")
+    axp.set_ylabel("speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
+    axp.set_title("Typical cost (p99) speedup", fontsize=10)
+    axp.grid(True, which="both", alpha=0.3)
+    axp.legend(fontsize=8)
+
     fig.suptitle("Lifecycle cost: Lawn2 vs Timer Wheel across distinct-TTL count", fontsize=12)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "inflection.png"), dpi=130)
