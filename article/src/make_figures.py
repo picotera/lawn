@@ -94,7 +94,10 @@ def inflection_plot():
 
     Right (P99, typical per-op cost, window-insensitive): the honest typical-cost
     crossover, plotted as a speedup ratio (Wheel/Lawn2) since p99 is smooth
-    enough that the ratio reads cleanly."""
+    enough that the ratio reads cleanly, against the distinct-TTL fraction
+    t/N (%) rather than the raw count, since p99 is where a scale-independent
+    boundary is worth checking."""
+    import matplotlib.ticker as mticker
     rows = [r for r in read("inflection.csv") if int(r["t"]) > 1]
     ns = sorted({int(r["N"]) for r in rows})
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
@@ -123,22 +126,23 @@ def inflection_plot():
     axm.grid(True, which="both", alpha=0.3)
     axm.legend(fontsize=8)
 
-    # Right: p99 typical-cost speedup ratio, one line per N.
+    # Right: p99 typical-cost speedup ratio, one line per N, vs t/N fraction.
     for i, N in enumerate(ns):
         color = color_cycle[i % len(color_cycle)]
         sub = sorted((r for r in rows if int(r["N"]) == N
                       and float(r.get("lawn2_life_p99", 0) or 0) > 0
                       and float(r.get("wahern_life_p99", 0) or 0) > 0),
-                     key=lambda r: int(r["t"]))
+                     key=lambda r: float(r["t_over_N"]))
         if not sub:
             continue
-        xs = [int(r["t"]) for r in sub]
+        xs = [float(r["t_over_N"]) * 100 for r in sub]
         ys = [float(r["wahern_life_p99"]) / float(r["lawn2_life_p99"]) for r in sub]
         axp.plot(xs, ys, marker="o", markersize=4, color=color, label=f"N={N:,}")
     axp.axhline(1.0, color="k", linestyle="--", linewidth=1, label="parity")
     axp.set_xscale("log")
     axp.set_yscale("log")
-    axp.set_xlabel("distinct-TTL count  t")
+    axp.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}%"))
+    axp.set_xlabel("distinct-TTL fraction  t/N (%)")
     axp.set_ylabel("speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
     axp.set_title("Typical cost (p99) speedup", fontsize=10)
     axp.grid(True, which="both", alpha=0.3)
