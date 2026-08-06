@@ -2,4 +2,4 @@
 c/build/
 c/*.o
 c/test
-c/bench
+c/benchmark
