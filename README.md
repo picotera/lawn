@@ -4,7 +4,7 @@
 
 :rocket:**TL;DR - A Lawn is a timer data store, not unlike Timer-Wheel, but with unlimited timer span with no degrigation in performance over a large set of timers *[with this API](docs/API.md).***
 
-
+![lawn schematic diagram](article/lawn.png)
 
 **Lawn** is a high troughput data structure that is based on the assumption that most timers are set to a small set of TTLs to boost overall DS performance. It can assist when handling a large set of timers with relativly small variance in TTL by effectivly using minimal queues to store timer data. Achieving O(1) for insertion and deletion of timers, and O(1) for tiemr expiration.
 
