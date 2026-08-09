@@ -7,7 +7,7 @@ deterministic and reproducible.
 ## Implementations
 
 Each algorithm is an adapter in [`impl/`](impl/) implementing the `cts_vtable`
-from `cts.h`; the harness (`bench.c`, `test.c`, `util.c`) is impl-agnostic.
+from `cts.h`; the harness (`benchmark.c`, `test.c`, `util.c`) is impl-agnostic.
 
 - `lawn` - the repo's `src/lawn.c` (queue-map algorithm), clock injected via
   the shared logical clock in `util.c`.
@@ -31,22 +31,22 @@ Lawn-vs-wheel-vs-naive story uncluttered.
 ## Build and run
 
 ```bash
-make                  # builds test and bench (Apple clang / gcc, C11, -Wall -Wextra)
+make                  # builds test and benchmark (Apple clang / gcc, C11, -Wall -Wextra)
 ./test                # differential correctness gate across all 6 impls
-./bench sweeps        # 7 ops x 4 axes -> results/*.csv (main baseline, n=100K)
-./bench huge          # same sweep at the extended baseline (n=10M)
-./bench dist          # TTL-distribution comparison -> results/ttl_distribution.csv
-./bench inflection    # per-tick distinct-TTL crossover -> results/inflection*.csv
-./bench lifecycle-inflection   # lifecycle-cost crossover -> results/lifecycle_inflection.csv
-./bench single <op> <algo> <axis_label> <n> <ttl_span> <distinct> <workload> [safety_pct] [preload_n]
+./benchmark sweeps    # 7 ops x 4 axes -> results/*.csv (main baseline, n=100K)
+./benchmark huge      # same sweep at the extended baseline (n=10M)
+./benchmark dist      # TTL-distribution comparison -> results/ttl_distribution.csv
+./benchmark inflection # per-tick + lifecycle distinct-TTL crossover -> results/inflection.csv
+                        # (one row per N/t/span_regime; span_regime is "fixed" or "scaled")
+./benchmark single <op> <algo> <axis_label> <n> <ttl_span> <distinct> <workload> [safety_pct] [preload_n]
                         # one (op, algo, params) point, printed, not written to a CSV
-./bench sweep-op <op> <axis> [huge]
-                        # re-run one op x one axis sweep, e.g. `./bench sweep-op lifecycle n`
-./bench all            # sweeps + huge + dist + both inflection variants
+./benchmark sweep-op <op> <axis> [huge]
+                        # re-run one op x one axis sweep, e.g. `./benchmark sweep-op lifecycle n`
+./benchmark all        # sweeps + huge + dist + inflection
 python3 ../../../article/src/make_figures.py    # regenerate article/*.png from results/*.csv
 ```
 
-With no arguments, `./bench` runs the main-baseline sweeps plus the
+With no arguments, `./benchmark` runs the main-baseline sweeps plus the
 distribution comparison as a quick sanity pass.
 
 Outputs land in `results/` (git-ignored). Timing uses the finest monotonic
@@ -56,15 +56,15 @@ platform allocator statistics. Every heavy sweep point is guarded by
 `memory_ok()`, which skips (prints `SKIP`, doesn't crash) any point estimated
 to exceed a safety margin of available memory.
 
-### Operations (`OPS[]` in `bench.c`)
+### Operations (`OPS[]` in `benchmark.c`)
 
 `insert`, `delete`, `tick_advance` (empty/idle tick), `expiry`, `memory`,
 `tick_scan` (a tick that actually crosses a live bucket), `lifecycle`
 (a realistic mixed insert/delete/tick workload against a preloaded background
-population — see the long comment above `measure_lifecycle` in `bench.c` for
-the population/replenishment model).
+population — see the long comment above `setup_lifecycle`/`payload_lifecycle`
+in `benchmark.c` for the population/replenishment model).
 
-### Sweep axes (`PARAMETER_NAMES[]` in `bench.c`)
+### Sweep axes (`PARAMETER_NAMES[]` in `benchmark.c`)
 
 `n` (timer count / population), `ttl_span`, `distinct_ttls`, `workload`
 (uniform / bursty / spread).

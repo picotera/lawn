@@ -148,17 +148,24 @@ void event_loop_tick(lawn2 *l) {
 | `lawn2_tick(l, &out_head)` | **$O(1)$ empty** / $O(\max(x,t))$ | Advances clock $+1$, sets `*out_head` to expired list, returns count. |
 | `lawn2_size(l)` | $O(1)$ | Returns total number of active timers currently in store. |
 | `lawn2_now(l)` | $O(1)$ | Returns current store logical clock tick value. |
+| `lawn2_next_expiration(l)` | $O(1)$ | Returns the earliest live expiry (a lower bound), useful for sizing the next `epoll`/`kqueue` wait timeout. |
 
 
 ---
 
 ## Lawn2 Intrusive Timer Storage Architecture & Evaluation Guide
 
-Since `lawn2` is an allocation-lean, intrusive Queue-Map timer store designed for high-performance, we elected to include an implementation of a **built-in two-level chunked array (block storage) implementation** to store `lawn2_timer`s in order the to assist developers who require a self-contained, turnkey ID-to-node mapping system without writing a custom memory allocator.
+### Motivation
+
+`lawn2` is an allocation-lean, intrusive Queue-Map timer store designed for high-performance, deterministic expiration tracking. Unlike traditional timer wheels or heaps that allocate wrapper nodes on the heap for every timer insertion, `lawn2` relies on an intrusive node design: the caller provides and owns the memory for each `lawn2_timer`.
+
+To assist developers who want a self-contained, turnkey ID-to-node mapping without writing a custom allocator, the repository includes a built-in two-level chunked array (block storage) implementation (`init_store()`/`timer_for()`/`destroy_store()` in `lawn2.c`). This section covers its architecture, performance trade-offs, and when to use it versus a custom storage layer.
+
+### Technical Overview
 
 The built-in storage engine implements a **two-level page table** (chunked array) that directly maps a 64-bit integer timer ID to a stable `lawn2_timer` memory address in $O(1)$ time. 
 
-Instead of storing nodes in a single flat array—which would require resizing and memory relocation as the timer population grows—the storage system divides memory into fixed-size slabs called **blocks**. Each block contains exactly **4,096 nodes** ($2^{12}$).
+Instead of storing nodes in a single flat array (which would require resizing and memory relocation as the timer population grows), the storage system divides memory into fixed-size slabs called **blocks**. Each block contains exactly **4,096 nodes** ($2^{12}$).
 
 #### Bitwise Indexing Architecture
 Resolving an ID to its corresponding node pointer bypasses hashing, collision resolution, and tree traversals entirely. It relies on two ultra-fast bitwise operations:
@@ -217,7 +224,7 @@ If you decide to bypass the built-in block storage and implement your own timer 
    struct client_session {
        int socket_fd;
        char ip_address[64];
-       /* Embed timer directly — zero secondary lookup or allocation needed */
+       /* Embed timer directly, no secondary lookup or allocation needed */
        lawn2_timer timer; 
    };
    ```
