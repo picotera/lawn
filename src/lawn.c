@@ -521,6 +521,15 @@ ElementQueue* pop_expired(Lawn* lawn) {
     // and should not be freed when the queue itself is freed
     retval->len = 0; // Start with 0 and increment as we add items
 
+    // Recomputed fresh from every live queue in this pass, not compared
+    // against the stale field value: if the queue holding the previously
+    // tracked next_expiration is fully drained below, no other (larger)
+    // queue head can ever be "less than" that now-consumed value, so
+    // comparing against lawn->next_expiration directly would leave it
+    // pinned at an already-past time forever, forcing a full scan on
+    // every subsequent tick regardless of whether anything is due.
+    mstime_t next_expiration = 0;
+
     HashMapEntry *entry = NULL;
     ElementQueue* queue = NULL;
     int bkt = 0;
@@ -532,12 +541,12 @@ ElementQueue* pop_expired(Lawn* lawn) {
                 ElementQueueNode* node = _queuePop(lawn, queue);
                 if (node != NULL) {
                     _removeNodeFromMapping(lawn, node);
-                    
+
                     // The caller should free the node
                     // Add the node to the return queue without linking to its previous nodes
                     node->prev = NULL;
                     node->next = NULL;
-                    
+
                     if (retval->head == NULL) {
                         retval->head = node;
                         retval->tail = node;
@@ -551,13 +560,14 @@ ElementQueue* pop_expired(Lawn* lawn) {
             }
             else
             {
-                if ((lawn->next_expiration == 0) ||
-                    (queue->head->expiration < lawn->next_expiration))
-                    lawn->next_expiration = queue->head->expiration;
+                if ((next_expiration == 0) ||
+                    (queue->head->expiration < next_expiration))
+                    next_expiration = queue->head->expiration;
                 break;
             }
         }
     }
+    lawn->next_expiration = next_expiration;
     return retval;
 }
 

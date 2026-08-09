@@ -54,7 +54,11 @@ static uint64_t lawn_tick(cts_store *s) {
 
 static uint64_t lawn_size(cts_store *s) { return (uint64_t)timer_count(s->l); }
 
+/* Jump the clock forward with no expiry processing (used for a staggered
+ * preload, where target stays below every live deadline so nothing is due). */
+static void lawn_advance(cts_store *s, uint64_t target) { s->now = target; }
+
 const cts_vtable cts_lawn_vtable = {
     "lawn", lawn_create, lawn_destroy,
-    lawn_start, lawn_stop, lawn_tick, lawn_size,
+    lawn_start, lawn_stop, lawn_tick, lawn_size, lawn_advance,
 };

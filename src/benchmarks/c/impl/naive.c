@@ -121,7 +121,11 @@ static uint64_t naive_tick(cts_store *s) {
 
 static uint64_t naive_size(cts_store *s) { return s->live; }
 
+/* Jump the clock forward with no expiry processing (used for a staggered
+ * preload, where target stays below every live deadline so nothing is due). */
+static void naive_advance(cts_store *s, uint64_t target) { s->now = target; }
+
 const cts_vtable cts_naive_vtable = {
     "naive", naive_create, naive_destroy,
-    naive_start, naive_stop, naive_tick, naive_size,
+    naive_start, naive_stop, naive_tick, naive_size, naive_advance,
 };

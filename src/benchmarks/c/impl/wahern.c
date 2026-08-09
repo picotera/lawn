@@ -80,7 +80,22 @@ static uint64_t wahern_tick(cts_store *s) {
 
 static uint64_t wahern_size(cts_store *s) { return s->live; }
 
+/* Fast-forward curtime to `target` in one tickless step (not tick-by-tick),
+ * so a staggered preload can insert at spread arrival times cheaply. Drains
+ * anything that came due, though a staggered preload keeps target below every
+ * deadline so none should. */
+static void wahern_advance(cts_store *s, uint64_t target) {
+    s->now = target;
+    timeouts_update(s->T, s->now);
+    struct timeout *to;
+    while ((to = timeouts_get(s->T))) {
+        s->timers[(uint64_t)(uintptr_t)to->callback.arg] = NULL;
+        free(to);
+        s->live--;
+    }
+}
+
 const cts_vtable cts_wahern_vtable = {
     "wahern", wahern_create, wahern_destroy,
-    wahern_start, wahern_stop, wahern_tick, wahern_size,
+    wahern_start, wahern_stop, wahern_tick, wahern_size, wahern_advance,
 };

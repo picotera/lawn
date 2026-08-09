@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """Regenerate the paper's figures from the committed C benchmark CSVs.
 
-Reads src/benchmarks/c/results_c/*.csv and writes the article/*.png the paper
+Reads src/benchmarks/c/results/*.csv and writes the article/*.png the paper
 references. Reproducible: no manual renaming. Run via `make figures`.
+
+Main-baseline sweeps live in results/<op>_<axis>.csv (n=100K, ttl_span=1024,
+distinct=100, uniform, unless the axis itself varies that parameter).
+Extended-scale sweeps (n=10M baseline) live alongside as
+results/<op>_<axis>_huge.csv. Both have a real header row, axis name as the
+first column.
 """
 import csv
 import os
@@ -12,29 +18,26 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RESULTS = os.path.join(HERE, "..", "..", "src", "benchmarks", "c", "results_c")
-HUGE_SWEEP = os.path.join(RESULTS, "huge_full_sweep")
+RESULTS = os.path.join(HERE, "..", "..", "src", "benchmarks", "c", "results")
 OUT = os.path.join(HERE, "..")
 
-# huge_scale/ and huge_full_sweep/ rows have no header line (written by a
-# small standalone tool, not the main bench.c); schema matches the main
-# results_c/*.csv columns.
-LATENCY_FIELDS = ["axisval", "algo", "mean_ns", "std_ns", "p99_ns", "max_ns",
-                  "n_samples", "runs", "warmup", "seed"]
-
-
-def read_headerless(path, fields):
-    with open(path) as f:
-        return list(csv.DictReader(f, fieldnames=fields))
+BASE_N = 100_000
+BASE_N_HUGE = 10_000_000
 
 # consistent styling per algorithm
 STYLE = {
-    "lawn":    ("Lawn (reference)", "#888888", "o"),
-    "lawn2":   ("Lawn2 (optimized)", "#1f77b4", "s"),
-    "wahern":  ("Timer Wheel",       "#ff7f0e", "^"),
-    "naive":   ("Naive ring",        "#2ca02c", "D"),
+    "lawn":       ("Lawn (reference)",       "#888888", "o"),
+    "lawn2":      ("Lawn2 (optimized)",      "#1f77b4", "s"),
+    "wahern":     ("Timer Wheel",            "#ff7f0e", "^"),
+    "naive":      ("Naive ring",             "#2ca02c", "D"),
+    "heap":       ("Binary heap",            "#9467bd", "v"),
+    "linuxwheel": ("Non-cascading wheel",    "#d62728", "*"),
 }
 ORDER = ["lawn", "lawn2", "wahern", "naive"]
+# Adapters added later, to test the wheel-generalization and mixed-workload
+# questions. Kept out of ORDER (and so out of every other figure below) to
+# keep the paper's main Lawn-vs-wheel-vs-naive story uncluttered.
+ORDER_ALL = ORDER + ["heap", "linuxwheel"]
 
 
 def read(fname):
@@ -80,34 +83,72 @@ def axis_plot(fname, xcol, ycol, scol, xlabel, ylabel, title, out,
 
 
 def inflection_plot():
-    import matplotlib.ticker as mticker
+    """Two-panel lifecycle crossover, Lawn2 vs Timer Wheel across distinct-TTL
+    count, one color per population N (reads inflection.csv's lifecycle columns).
 
-    rows = read("inflection.csv")
+    Left (RAW mean latency, ns, not a ratio): Lawn2 (solid) and the Timer Wheel
+    (dashed) plotted directly. A Wheel/Lawn2 speedup ratio amplifies noise
+    whenever the (already small) Lawn2 denominator swings a little, which is
+    exactly what made the ratio-based mean panel zigzag; the raw numbers are
+    the more honest view of that noise.
+
+    Right (P99, typical per-op cost, window-insensitive): the honest typical-cost
+    crossover, plotted as a speedup ratio (Wheel/Lawn2) since p99 is smooth
+    enough that the ratio reads cleanly, against the distinct-TTL fraction
+    t/N (%) rather than the raw count, since p99 is where a scale-independent
+    boundary is worth checking."""
+    import matplotlib.ticker as mticker
+    rows = [r for r in read("inflection.csv") if int(r["t"]) > 1]
     ns = sorted({int(r["N"]) for r in rows})
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    for N in ns:
-        # t_over_N is a fraction (0..1); plot as a percentage.
-        xs = [float(r["t_over_N"]) * 100 for r in rows if int(r["N"]) == N]
-        # Speedup = Wheel / Lawn2 (inverse of the raw cost ratio), so higher
-        # always means Lawn2 winning by more, rather than a ratio where the
-        # win region is below 1.
-        ys = [float(r["wahern_life_ns"]) / float(r["lawn2_life_ns"])
-              for r in rows if int(r["N"]) == N]
-        ax.plot(xs, ys, marker="o", markersize=4, label=f"N={N:,}")
-    ax.axhline(1.0, color="k", linestyle="--", linewidth=1,
-               label="parity (Lawn2 = Wheel)")
-    ax.set_xscale("log")
-    # Vertical axis uses actual numbers on a linear scale rather than a log
-    # scale, at the reader's request, even though the ratio spans several
-    # orders of magnitude and small values compress near zero as a result.
-    # Log-scaled percentages, but labeled as plain percent values (e.g. "1%",
-    # "0.01%") rather than the default power-of-ten tick labels.
-    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}%"))
-    ax.set_xlabel("distinct-TTL fraction  t/N (%)")
-    ax.set_ylabel("speedup  Timer Wheel / Lawn2  (higher = Lawn2 wins by more)")
-    ax.set_title("Crossover: Lawn2 wins below t/N ~ 1-5%, loses above")
-    ax.grid(True, which="both", alpha=0.3)
-    ax.legend(fontsize=8)
+    color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+
+    fig, (axm, axp) = plt.subplots(1, 2, figsize=(12, 4.6))
+
+    # Left: raw mean latency, Lawn2 solid vs Wheel dashed, one color per N.
+    for i, N in enumerate(ns):
+        color = color_cycle[i % len(color_cycle)]
+        sub = sorted((r for r in rows if int(r["N"]) == N
+                      and float(r.get("lawn2_life_ns", 0) or 0) > 0
+                      and float(r.get("wahern_life_ns", 0) or 0) > 0),
+                     key=lambda r: int(r["t"]))
+        if not sub:
+            continue
+        xs = [int(r["t"]) for r in sub]
+        l2 = [float(r["lawn2_life_ns"]) for r in sub]
+        wh = [float(r["wahern_life_ns"]) for r in sub]
+        axm.plot(xs, l2, marker="o", markersize=4, color=color, linestyle="-", label=f"N={N:,}")
+        axm.plot(xs, wh, marker="o", markersize=4, color=color, linestyle="--")
+    axm.set_xscale("log")
+    axm.set_yscale("log")
+    axm.set_xlabel("distinct-TTL count  t")
+    axm.set_ylabel("lifecycle latency (ns)")
+    axm.set_title("Raw mean latency: Lawn2 (solid) vs Timer Wheel (dashed)", fontsize=10)
+    axm.grid(True, which="both", alpha=0.3)
+    axm.legend(fontsize=8)
+
+    # Right: p99 typical-cost speedup ratio, one line per N, vs t/N fraction.
+    for i, N in enumerate(ns):
+        color = color_cycle[i % len(color_cycle)]
+        sub = sorted((r for r in rows if int(r["N"]) == N
+                      and float(r.get("lawn2_life_p99", 0) or 0) > 0
+                      and float(r.get("wahern_life_p99", 0) or 0) > 0),
+                     key=lambda r: float(r["t_over_N"]))
+        if not sub:
+            continue
+        xs = [float(r["t_over_N"]) * 100 for r in sub]
+        ys = [float(r["wahern_life_p99"]) / float(r["lawn2_life_p99"]) for r in sub]
+        axp.plot(xs, ys, marker="o", markersize=4, color=color, label=f"N={N:,}")
+    axp.axhline(1.0, color="k", linestyle="--", linewidth=1, label="parity")
+    axp.set_xscale("log")
+    axp.set_yscale("log")
+    axp.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:g}%"))
+    axp.set_xlabel("distinct-TTL fraction  t/N (%)")
+    axp.set_ylabel("speedup  Wheel / Lawn2  (higher = Lawn2 wins by more)")
+    axp.set_title("Typical cost (p99) speedup", fontsize=10)
+    axp.grid(True, which="both", alpha=0.3)
+    axp.legend(fontsize=8)
+
+    fig.suptitle("Lifecycle cost: Lawn2 vs Timer Wheel across distinct-TTL count", fontsize=12)
     fig.tight_layout()
     fig.savefig(os.path.join(OUT, "inflection.png"), dpi=130)
     plt.close(fig)
@@ -141,9 +182,10 @@ def concurrency_plot():
 
 def extended_tick_plot():
     """tick_advance vs n, extended far past the main results' one-million-timer
-    ceiling (results_c/huge_full_sweep/tick_advance_n.csv), for Section VII.F."""
-    rows = read_headerless(os.path.join(HUGE_SWEEP, "tick_advance_n.csv"), LATENCY_FIELDS)
-    d = by_algo(rows, "axisval", "mean_ns", "std_ns")
+    ceiling (results/tick_advance_n.csv + tick_advance_n_huge.csv), for
+    Section VII.F."""
+    rows = read("tick_advance_n.csv") + read("tick_advance_n_huge.csv")
+    d = by_algo(rows, "n", "mean_ns", "std_ns")
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for algo in ORDER:
         if algo not in d:
@@ -169,16 +211,16 @@ def extended_tick_plot():
 
 def extended_memory_plot():
     """Per-timer memory vs n, extended far past the main results' one-million-
-    timer ceiling (results_c/huge_full_sweep/memory_n.csv, which stores total
+    timer ceiling (results/memory_n.csv + memory_n_huge.csv, which store total
     bytes, divided by n for per-timer bytes to match Figure memory.png's
     units)."""
-    rows = read_headerless(os.path.join(HUGE_SWEEP, "memory_n.csv"), LATENCY_FIELDS)
+    rows = read("memory_n.csv") + read("memory_n_huge.csv")
     d = {}
     for r in rows:
-        n = float(r["axisval"])
+        n = float(r["n"])
         d.setdefault(r["algo"], ([], []))
         d[r["algo"]][0].append(n)
-        d[r["algo"]][1].append(float(r["mean_ns"]) / n)
+        d[r["algo"]][1].append(float(r["mean_bytes"]) / n)
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for algo in ORDER:
         if algo not in d:
@@ -234,53 +276,13 @@ def workload_expiry_plot():
     print("wrote workload_expiry.png")
 
 
-def density_vs_n_plot():
-    """Tests whether N/ttl_span ('density') alone explains the wheel's
-    empty-tick blowup, using the ttl_span sweep already collected at both
-    baselines (results_c/tick_advance_ttl_span.csv, n=100K, and
-    huge_full_sweep/tick_advance_ttl_span.csv, n=10M). Plots wahern's cost
-    against actual density (N/ttl_span) for both baselines on one axis: if
-    density were the sole driver, matched-density points from the two
-    baselines would coincide. They do not (checked directly: n=100K at
-    ttl_span=2560 and n=10M at ttl_span=256000 both have density=39.06, but
-    differ by 128x in cost), so this figure shows N itself, not density
-    alone, is doing most of the work. Lawn2 is plotted alongside for scale
-    reference (this absorbs what the old distinct_ttls-based density_effect
-    figure showed, now folded into this one)."""
-    small = by_algo(read("tick_advance_ttl_span.csv"), "ttl_span", "mean_ns")
-    huge = by_algo(read_headerless(os.path.join(HUGE_SWEEP, "tick_advance_ttl_span.csv"),
-                                    LATENCY_FIELDS), "axisval", "mean_ns")
-    fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    for algo in ("wahern", "lawn2"):
-        label, color, marker = STYLE[algo]
-        for baseline, n, d, linestyle, alpha in (("n=100K", 100_000, small, "-", 1.0),
-                                                  ("n=10M", 10_000_000, huge, "--", 0.7)):
-            x, y, _ = d[algo]
-            pts = sorted((n / span, cost) for span, cost in zip(x, y))
-            dens, cost = zip(*pts)
-            ax.plot(dens, cost, marker=marker, color=color, linestyle=linestyle, markersize=6,
-                    linewidth=1.5, alpha=alpha, label=f"{label}, {baseline}")
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("density  N / TTL span  (timers per tick, log scale)")
-    ax.set_ylabel("empty-tick latency (ns)")
-    ax.set_title("Density alone does not explain the wheel's cost (lower is better)")
-    ax.grid(True, which="both", alpha=0.3)
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(os.path.join(OUT, "density_vs_n.png"), dpi=130)
-    plt.close(fig)
-    print("wrote density_vs_n.png")
-
-
 def overflow_scale_plot():
-    """Total memory vs. TTL span (results_c/memory_ttl_span.csv, n=100K, the
-    main baseline) alongside the n=10M full sweep (huge_full_sweep), all four
-    implementations, log-scale since the two baselines differ by ~2 orders of
-    magnitude in absolute bytes."""
+    """Total memory vs. TTL span (results/memory_ttl_span.csv, n=100K, the
+    main baseline) alongside the n=10M full sweep (memory_ttl_span_huge.csv),
+    all four implementations, log-scale since the two baselines differ by
+    ~2 orders of magnitude in absolute bytes."""
     small = by_algo(read("memory_ttl_span.csv"), "ttl_span", "mean_bytes")
-    huge = by_algo(read_headerless(os.path.join(HUGE_SWEEP, "memory_ttl_span.csv"),
-                                    LATENCY_FIELDS), "axisval", "mean_ns")
+    huge = by_algo(read("memory_ttl_span_huge.csv"), "ttl_span", "mean_bytes")
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for algo in ORDER:
         label, color, marker = STYLE[algo]
@@ -308,15 +310,12 @@ def overflow_scale_plot():
 
 
 def naive_overflow_scale_plot():
-    """Naive ring's memory-vs-ttl_span overflow (results_c/memory_ttl_span.csv,
-    the main results' n=100K baseline, source of Figure 8/overflow.png) at two
-    baselines against the n=10M full sweep, normalized to each series' own
-    first point, to show the overflow effect weakening in relative terms.
-    Lawn2 is plotted alongside as a flat control: it does not overflow at
-    either baseline."""
+    """Naive ring's memory-vs-ttl_span overflow at two baselines, normalized
+    to each series' own first point, to show the overflow effect weakening
+    in relative terms. Lawn2 is plotted alongside as a flat control: it does
+    not overflow at either baseline."""
     small = by_algo(read("memory_ttl_span.csv"), "ttl_span", "mean_bytes")
-    huge = by_algo(read_headerless(os.path.join(HUGE_SWEEP, "memory_ttl_span.csv"),
-                                    LATENCY_FIELDS), "axisval", "mean_ns")
+    huge = by_algo(read("memory_ttl_span_huge.csv"), "ttl_span", "mean_bytes")
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
     for algo in ("naive", "lawn2"):
         label, color, marker = STYLE[algo]
@@ -341,6 +340,116 @@ def naive_overflow_scale_plot():
     print("wrote naive_overflow_scale.png")
 
 
+def density_vs_n_plot():
+    """Tests whether N/ttl_span ('density') alone explains the wheel's
+    empty-tick blowup, using the ttl_span sweep already collected at both
+    baselines (results/tick_advance_ttl_span.csv, n=100K, and
+    tick_advance_ttl_span_huge.csv, n=10M). Plots wahern's (and lawn2's, for
+    scale reference) cost against actual density (N/ttl_span) for both
+    baselines on one axis: if density were the sole driver, matched-density
+    points from the two baselines would coincide."""
+    small = by_algo(read("tick_advance_ttl_span.csv"), "ttl_span", "mean_ns")
+    huge = by_algo(read("tick_advance_ttl_span_huge.csv"), "ttl_span", "mean_ns")
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    for algo in ("wahern", "lawn2"):
+        label, color, marker = STYLE[algo]
+        for baseline, n, d, linestyle, alpha in (("n=100K", BASE_N, small, "-", 1.0),
+                                                  ("n=10M", BASE_N_HUGE, huge, "--", 0.7)):
+            x, y, _ = d[algo]
+            pts = sorted((n / span, cost) for span, cost in zip(x, y))
+            dens, cost = zip(*pts)
+            ax.plot(dens, cost, marker=marker, color=color, linestyle=linestyle, markersize=6,
+                    linewidth=1.5, alpha=alpha, label=f"{label}, {baseline}")
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("density  N / TTL span  (timers per tick, log scale)")
+    ax.set_ylabel("empty-tick latency (ns)")
+    ax.set_title("Density alone does not explain the wheel's cost (lower is better)")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "density_vs_n.png"), dpi=130)
+    plt.close(fig)
+    print("wrote density_vs_n.png")
+
+
+def lifecycle_plot():
+    """Realistic mixed-workload latency vs n, main baseline (results/
+    lifecycle_n.csv, 1K-1M): pre-fills n background timers, then times a
+    fixed sequence of randomly interleaved insert/delete/tick operations,
+    unlike every other figure here, which isolates one operation type.
+    Solid = mean, dashed = p99, to show both typical and tail cost in one
+    plot. Extended further in Section VII.G once (results/
+    lifecycle_n_huge.csv) once machine memory pressure allowed it."""
+    # Full population range: 1K-1M (lifecycle_n.csv) plus the extended
+    # 2M-200M sweep (lifecycle_n_huge.csv) when present. Both halves use the
+    # same fixed TTL span, so there is no density seam at the join.
+    rows = read("lifecycle_n.csv")
+    if os.path.exists(os.path.join(RESULTS, "lifecycle_n_huge.csv")):
+        rows = rows + read("lifecycle_n_huge.csv")
+    mean_d = by_algo(rows, "n", "mean_ns", "std_ns")
+    p99_d = by_algo(rows, "n", "p99_ns")
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    for algo in ORDER_ALL:
+        if algo not in mean_d:
+            continue
+        label, color, marker = STYLE[algo]
+        x, y, s = mean_d[algo]
+        pts = sorted(zip(x, y, s)); x, y, s = zip(*pts)
+        ax.errorbar(x, y, yerr=s, marker=marker, color=color, linestyle="-",
+                    capsize=2, markersize=5, linewidth=1.3, label=f"{label}")
+        xp, yp, _ = p99_d[algo]
+        ptsp = sorted(zip(xp, yp)); xp, yp = zip(*ptsp)
+        ax.plot(xp, yp, marker=marker, color=color, linestyle="--",
+                markersize=4, linewidth=1.0, alpha=0.6)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("number of background timers")
+    ax.set_ylabel("per-operation latency (ns)")
+    ax.set_title("Realistic mixed workload across scale: mean (solid) vs p99 (dashed)")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "lifecycle.png"), dpi=130)
+    plt.close(fig)
+    print("wrote lifecycle.png")
+
+
+def extended_lifecycle_plot():
+    """Realistic mixed-workload latency vs n, extended to one hundred
+    million background timers (results/lifecycle_n.csv +
+    lifecycle_n_huge.csv). Same mean (solid) / p99 (dashed) convention as
+    Figure~lifecycle. Confirms the main-baseline finding holds at scale:
+    every implementation except the cascading wheel stays flat."""
+    rows = read("lifecycle_n.csv") + read("lifecycle_n_huge.csv")
+    mean_d = by_algo(rows, "n", "mean_ns", "std_ns")
+    p99_d = by_algo(rows, "n", "p99_ns")
+    fig, ax = plt.subplots(figsize=(6.4, 4.2))
+    for algo in ORDER_ALL:
+        if algo not in mean_d:
+            continue
+        label, color, marker = STYLE[algo]
+        x, y, s = mean_d[algo]
+        pts = sorted(zip(x, y, s)); x, y, s = zip(*pts)
+        ax.errorbar(x, y, yerr=s, marker=marker, color=color, linestyle="-",
+                    capsize=2, markersize=4, linewidth=1.2, label=f"{label}")
+        xp, yp, _ = p99_d[algo]
+        ptsp = sorted(zip(xp, yp)); xp, yp = zip(*ptsp)
+        ax.plot(xp, yp, marker=marker, color=color, linestyle="--",
+                markersize=3, linewidth=0.9, alpha=0.6)
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel("number of background timers (extended past 1M)")
+    ax.set_ylabel("per-operation latency (ns)")
+    ax.set_title("Realistic mixed workload to 200M: mean (solid) vs p99 (dashed)")
+    ax.grid(True, which="both", alpha=0.3)
+    ax.legend(fontsize=7, ncol=2)
+    fig.tight_layout()
+    fig.savefig(os.path.join(OUT, "extended_lifecycle.png"), dpi=130)
+    plt.close(fig)
+    print("wrote extended_lifecycle.png")
+
+
 def main():
     axis_plot("insert_n.csv", "n", "mean_ns", "std_ns",
               "number of timers", "insert latency (ns)",
@@ -362,6 +471,8 @@ def main():
     density_vs_n_plot()
     naive_overflow_scale_plot()
     workload_expiry_plot()
+    lifecycle_plot()
+    extended_lifecycle_plot()
     print("done")
 
 

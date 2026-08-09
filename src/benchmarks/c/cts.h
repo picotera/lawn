@@ -16,6 +16,10 @@ typedef struct {
     int        (*stop)(cts_store *, uint64_t id);   /* 1 removed, 0 absent */
     uint64_t   (*tick)(cts_store *);                /* advance 1 tick, #expired */
     uint64_t   (*size)(cts_store *);
+    /* Optional: fast-forward the logical clock to `target` (O(1)/O(levels),
+     * not tick-by-tick) so a preload can be inserted at staggered arrival
+     * times. NULL if the store can't jump its clock cheaply. */
+    void       (*advance)(cts_store *, uint64_t target);
 } cts_vtable;
 
 /* Injected logical clock shared with lawn.c's current_time_ms(). */
@@ -30,5 +34,7 @@ extern const cts_vtable cts_lawn_vtable;
 extern const cts_vtable cts_lawn2_vtable;
 extern const cts_vtable cts_wahern_vtable;
 extern const cts_vtable cts_naive_vtable;
+extern const cts_vtable cts_heap_vtable;
+extern const cts_vtable cts_linuxwheel_vtable;
 
 #endif /* CTS_H */
