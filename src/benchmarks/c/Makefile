@@ -10,19 +10,19 @@ ADAPTERS = impl/lawn.c impl/lawn2.c impl/wahern.c impl/naive.c impl/heap.c impl/
 DEPS     = ../../lawn.c ../../utils/hashmap.c \
            ../../../article/src/c/wheel/timeout.c ../../lawn2.c
 
-all: test bench
+all: test benchmark
 
 test: test.c $(HARNESS) $(ADAPTERS) $(DEPS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
-bench: bench.c $(HARNESS) $(ADAPTERS) $(DEPS)
+benchmark: benchmark.c $(HARNESS) $(ADAPTERS) $(DEPS)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 run:
 	./test
-	./bench
+	./benchmark
 
 clean:
-	rm -f test bench
+	rm -f test benchmark
 
 .PHONY: all clean

@@ -1,14 +1,16 @@
-Dear editor/reviewer,
+Dear Editor,
 
-My name is Adam Lev-Libfeld an I have been working in the field of High-Performance Computing for the last decade. I started as a research assistant than an associate researcher in the MOSIX preemptive process migration lab at HUJI, then as a major government-operated research centre, and then as a private consultant with Tamar Labs, Redis Labs, and several companies here in Israel. 
+I am submitting "Timer Lawn: Solving the Timer Wheel Overflow Problem for Large Scale and High Throughput Systems" for your consideration.
 
-This is cover letter for the submitted paper presenting a new timer data structure named "Timer Lawn", that is the fruit of working with internet scale companies over the last few years. This data structure, although suboptimal theoretically, provides better performance in real life scenarios when compared to the current state of the art Timer Wheel by examining real-life use cases and avoiding the rebuilding problem altogether. The Lawn data structure is unbound, self-scaling, highly parallel and simpler to implement with the only limit being having the Timer TTL be discrete.
+I have spent the last decade working in high-performance and large-scale systems: as a research assistant and later an associate researcher in the MOSIX preemptive process migration lab at the Hebrew University of Jerusalem, at a government-operated research center, and since then as a private consultant and engineer with Tamar Labs, Redis Labs, and NextSilicon, where I currently work.
 
-The Lawn data structure has already been deployed to several applications (as listed in the paper) with reportedly highly positive effects. With major algorithmic advancements in the field dating back to the late 90s (specifically published by TNET), this new data structure is tailored to the needs of modern computer-to-computer and networking systems, streamlining the efficient coding and use of large numbers of timers in real life applications.
+This paper presents Lawn, a timer data structure that maps queues by time-to-live rather than by absolute expiration time. That single change gives it an unbounded TTL span with no rebuild-on-overflow cost, the failure mode that limits the standard timing wheel in systems where the maximum TTL is unpredictable or the tick resolution needs to change. The TTL-keyed queue-map idea and the name were introduced in an earlier preprint of mine. This submission is a substantial extension of that work: an allocation-free implementation (Lawn2), a differential correctness gate validated across four independently written implementations, a directly measured crossover map showing exactly where Lawn's advantage holds and where it does not, and new results the earlier version did not report, including memory behavior at scale, workload characterization, and a robustness sweep to hundreds of millions of timers. I state the trade-off's boundary quantitatively rather than qualitatively, and report plainly where Lawn should and should not be used.
 
-Thank you for taking the time to review this paper, please feel free to contact me with any questions you may have.
+Lawn is already in production use by several organizations, some independent of me, including Redis Internals for streams and other internal timers, the ReDe Redis dehydration module, Mellanox RDMA timers for Unified Communication X, and an independent clib timer-management utility library. Source is available for the ReDe and Unified Communication X implementations.
+
+Thank you for considering this paper. I am glad to answer any questions you or the reviewers may have.
 
 Sincerely,
 Adam Lev-Libfeld
-
-adamlev@cs.huji.ac.il
+NextSilicon Ltd., Tel-Aviv, Israel
+adam.lev.libfeld@nextsilicon.com

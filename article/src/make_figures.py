@@ -98,7 +98,8 @@ def inflection_plot():
     t/N (%) rather than the raw count, since p99 is where a scale-independent
     boundary is worth checking."""
     import matplotlib.ticker as mticker
-    rows = [r for r in read("inflection.csv") if int(r["t"]) > 1]
+    rows = [r for r in read("inflection.csv")
+            if int(r["t"]) > 1 and r.get("span_regime", "scaled") == "scaled"]
     ns = sorted({int(r["N"]) for r in rows})
     color_cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
 
