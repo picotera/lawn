@@ -18,6 +18,7 @@
 !**/*.json
 !**/*.txt
 !**/*.png
+!src/benchmarks/c/results/inflection.csv
 
 /site
 style.c
