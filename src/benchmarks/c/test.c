@@ -1,12 +1,21 @@
 /* Correctness gate for the C adapters. Exit non-zero on failure. */
 #include "cts.h"
 #include "util.h"
+#include "impl/lawn2_clamped.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <assert.h>
 
 #define N 5000
 #define TICKS 1000
+
+/* lawn2clamp deliberately reschedules ttls onto coarser wheel buckets, so it
+ * is excluded from the exact-schedule checks below; clamp_math/clamp_wiring
+ * cover its own correctness. */
+static int is_lossy(const cts_vtable *vt) {
+    return !strcmp(vt->name, "lawn2clamp");
+}
 
 /* Run one impl on a fixed (id,ttl) set, recording per-tick expiry counts.
  * If del_stride>0, delete every del_stride-th id before ticking. */
@@ -37,7 +46,10 @@ static void differential(int del_stride) {
     uint64_t *ref = malloc(TICKS * sizeof *ref);
     uint64_t *cur = malloc(TICKS * sizeof *cur);
     schedule(cts_algos[0], ttls, ref, del_stride);
+    int checked = 1;
     for (int a = 1; a < cts_nalgos; a++) {
+        if (is_lossy(cts_algos[a])) continue;
+        checked++;
         schedule(cts_algos[a], ttls, cur, del_stride);
         for (int t = 0; t < TICKS; t++) {
             if (cur[t] != ref[t]) {
@@ -51,7 +63,7 @@ static void differential(int del_stride) {
     }
     free(ttls); free(ref); free(cur);
     printf("  differential (del_stride=%d): %d impls agree over %d ticks\n",
-           del_stride, cts_nalgos, TICKS);
+           del_stride, checked, TICKS);
 }
 
 /* A large TTL spanning multiple wheel levels / a ring grow must fire on its
@@ -62,6 +74,7 @@ static void overflow_exact(void) {
         uint64_t ttl = ttls[k];
         for (int a = 0; a < cts_nalgos; a++) {
             const cts_vtable *vt = cts_algos[a];
+            if (is_lossy(vt)) continue;
             cts_store *s = vt->create();
             vt->start(s, 42, ttl);
             uint64_t fired_at = 0;
@@ -80,6 +93,58 @@ static void overflow_exact(void) {
     printf("  overflow/exact-tick: all impls fire large TTLs on the exact tick\n");
 }
 
+/* Pure-function invariants for the Linux-kernel-style TTL clamp used by
+ * lawn2clamp (impl/lawn2_clamped.c): never fires early, and an already
+ * bucket-aligned ttl is a fixed point. Covers every level, including the
+ * level-8 catch-all, without ticking a store through tens of millions of
+ * ticks. */
+static void clamp_math(void) {
+    static const uint64_t ttls[] = {
+        0, 1, 63, 64, 65, 511, 512, 4095, 4096, 32767, 32768,
+        262143, 262144, 2097151, 2097152, 16777215, 16777216,
+        134217727, 134217728, 200000000,
+    };
+    for (size_t k = 0; k < sizeof ttls / sizeof ttls[0]; k++) {
+        uint64_t ttl = ttls[k];
+        uint64_t clamped = clamp_timer_ttl(ttl);
+        uint64_t reclamped = clamp_timer_ttl(clamped);
+        if (clamped < ttl || reclamped != clamped) {
+            fprintf(stderr, "FAIL clamp_math: ttl=%llu clamp=%llu clamp(clamp)=%llu\n",
+                    (unsigned long long)ttl, (unsigned long long)clamped,
+                    (unsigned long long)reclamped);
+            exit(1);
+        }
+    }
+    printf("  clamp_timer_ttl: %zu ttls never fire early and are bucket-stable\n",
+           sizeof ttls / sizeof ttls[0]);
+}
+
+/* End-to-end: lawn2clamp must actually hand lawn2 the clamped ttl, not the
+ * raw one. Kept to small ttls so the fire-tick search stays cheap. */
+static void clamp_wiring(void) {
+    static const uint64_t ttls[] = { 1, 63, 64, 65, 100, 511, 512, 1000, 4095, 4096 };
+    const cts_vtable *vt = &cts_lawn2_clamped_vtable;
+    for (size_t k = 0; k < sizeof ttls / sizeof ttls[0]; k++) {
+        uint64_t ttl = ttls[k];
+        uint64_t expected = clamp_timer_ttl(ttl);
+        cts_store *s = vt->create();
+        vt->start(s, 7, ttl);
+        uint64_t fired_at = 0;
+        for (uint64_t t = 1; t <= expected; t++) {
+            if (vt->tick(s)) { fired_at = t; break; }
+        }
+        if (fired_at != expected || vt->size(s) != 0) {
+            fprintf(stderr, "FAIL clamp_wiring: ttl=%llu expected=%llu fired_at=%llu size=%llu\n",
+                    (unsigned long long)ttl, (unsigned long long)expected,
+                    (unsigned long long)fired_at, (unsigned long long)vt->size(s));
+            exit(1);
+        }
+        vt->destroy(s);
+    }
+    printf("  lawn2clamp: %zu ttls fire on their clamped tick via lawn2\n",
+           sizeof ttls / sizeof ttls[0]);
+}
+
 int main(void) {
     printf("C correctness gate (%d impls: ", cts_nalgos);
     for (int a = 0; a < cts_nalgos; a++) printf("%s%s", cts_algos[a]->name,
@@ -87,6 +152,8 @@ int main(void) {
     differential(0);
     differential(7);
     overflow_exact();
+    clamp_math();
+    clamp_wiring();
     printf("ALL C CORRECTNESS TESTS PASSED\n");
     return 0;
 }

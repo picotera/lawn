@@ -511,6 +511,7 @@ static double free_and_inactive_bytes(void) {
 static double bytes_per_timer_estimate(const char *algo) {
     if (!strcmp(algo, "lawn"))       return 113.0;
     if (!strcmp(algo, "lawn2"))      return 48.0;
+    if (!strcmp(algo, "lawn2clamp")) return 48.0;
     if (!strcmp(algo, "wahern"))     return 88.0;
     if (!strcmp(algo, "naive"))      return 38.0;
     if (!strcmp(algo, "heap"))       return 25.0;

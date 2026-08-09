@@ -14,6 +14,7 @@ mstime_t current_time_ms(void) {
 const cts_vtable *const cts_algos[] = {
     &cts_lawn_vtable,
     &cts_lawn2_vtable,
+    &cts_lawn2_clamped_vtable,
     &cts_wahern_vtable,
     &cts_naive_vtable,
     &cts_heap_vtable,
