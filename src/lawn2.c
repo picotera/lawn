@@ -5,11 +5,14 @@
 
 /* One TTL blade: head is the earliest expiry (queue is self-sorted because
  * same-TTL timers arrive in expiry order). Empty-but-used slots linger until a
- * grow rehashes them out; the same TTLs reappear in practice, so t stays small. */
-typedef struct {
+ * grow rehashes them out; the same TTLs reappear in practice, so t stays small.
+ * live_prev/live_next thread this blade into lawn2.live_head whenever
+ * head != NULL, so a tick only visits buckets that actually hold timers. */
+typedef struct blade {
     uint64_t   ttl;
     int        used;
     lawn2_timer *head, *tail;
+    struct blade *live_prev, *live_next;
 } blade;
 
 struct lawn2 {
@@ -20,7 +23,24 @@ struct lawn2 {
     size_t   count;          /* used slots (distinct TTLs seen) */
     uint64_t live;
     uint64_t next_expiration;/* lower bound on earliest live expiry */
+    blade   *live_head;      /* head of the non-empty-bucket list */
 };
+
+/* Splice b into the live list; b must currently be out of it (head was NULL). */
+static void live_link(lawn2 *l, blade *b) {
+    b->live_prev = NULL;
+    b->live_next = l->live_head;
+    if (l->live_head) l->live_head->live_prev = b;
+    l->live_head = b;
+}
+
+/* Remove b from the live list; b must currently be in it (head is now NULL). */
+static void live_unlink(lawn2 *l, blade *b) {
+    if (b->live_prev) b->live_prev->live_next = b->live_next;
+    else l->live_head = b->live_next;
+    if (b->live_next) b->live_next->live_prev = b->live_prev;
+    b->live_prev = b->live_next = NULL;
+}
 
 
 // ##################### timer storage #################################
@@ -78,11 +98,16 @@ static void grow(lawn2 *l) {
     l->tab = calloc(ncap, sizeof(blade));
     l->cap = ncap;
     l->bits = nb;
+    /* Rebuild the live list from scratch: the copied live_prev/live_next
+     * below still point into `ot`, which is about to be freed. */
+    l->live_head = NULL;
     size_t new_count = 0;
     for (size_t i = 0; i < ocap; i++) {
         if (ot[i].used) {
             blade *b = find_slot(l, ot[i].ttl);  /* empty in the new table */
             *b = ot[i];                           /* carries head/tail ptrs */
+            b->live_prev = b->live_next = NULL;
+            if (b->head) live_link(l, b);
             new_count++;
         }
     }
@@ -111,6 +136,7 @@ void lawn2_free(lawn2 *l) {
 void lawn2_add(lawn2 *l, lawn2_timer *n, uint64_t ttl) {
     if ((l->count + 1) * 10 >= l->cap * 7) grow(l);  /* keep load < 0.7 */
     blade *b = find_slot(l, ttl);
+    int was_empty = !b->head;
     if (!b->used) {
         b->used = 1;
         b->ttl = ttl;
@@ -127,6 +153,7 @@ void lawn2_add(lawn2 *l, lawn2_timer *n, uint64_t ttl) {
     b->tail = n;
     l->live++;
     if (n->expiration < l->next_expiration) l->next_expiration = n->expiration;
+    if (was_empty) live_link(l, b);
 }
 
 void lawn2_del(lawn2 *l, lawn2_timer *n) {
@@ -137,20 +164,22 @@ void lawn2_del(lawn2 *l, lawn2_timer *n) {
     n->next = n->prev = NULL;
     n->in_store = 0;
     l->live--;
+    if (!b->head) live_unlink(l, b);
     /* next_expiration stays a valid lower bound (removal only delays expiry). and this will update on the next tick either way */
 }
 
-uint64_t lawn2_tick(lawn2 *l, lawn2_timer **out_head) {
+/* Shared by lawn2_tick/lawn2_advance: fire everything due by `now` (which the
+ * caller has already stored into l->now). Walks only non-empty buckets via
+ * live_head, unlinking any that drain to empty as it goes. */
+static uint64_t collect_expired(lawn2 *l, uint64_t now, lawn2_timer **out_head) {
     if (out_head) *out_head = NULL;
-    l->now++;
+    if (now < l->next_expiration) return 0;   /* O(1) empty advance */
 
-    if (l->now < l->next_expiration) return 0;   /* O(1) empty tick */
-
-    uint64_t now = l->now, fired = 0;
+    uint64_t fired = 0;
     uint64_t ne = UINT64_MAX; /* recompute over t heads in flight */
-    for (size_t i = 0; i < l->cap; i++) {
-        blade *b = &l->tab[i];
-        if (!b->used) continue;
+    blade *b = l->live_head;
+    while (b) {
+        blade *next_live = b->live_next;  /* save: b may leave the list below */
 
         while (b->head && b->head->expiration <= now) {  /* self-sorted head */
             lawn2_timer *n = b->head;
@@ -170,12 +199,27 @@ uint64_t lawn2_tick(lawn2 *l, lawn2_timer **out_head) {
 
             fired++;
         }
-        if (b->head && b->head->expiration < ne)
-            ne = b->head->expiration;
+        if (!b->head) live_unlink(l, b);
+        else if (b->head->expiration < ne) ne = b->head->expiration;
+        b = next_live;
     }
     l->live -= fired;
     l->next_expiration = ne;
     return fired;
+}
+
+uint64_t lawn2_tick(lawn2 *l, lawn2_timer **out_head) {
+    l->now++;
+    return collect_expired(l, l->now, out_head);
+}
+
+uint64_t lawn2_advance(lawn2 *l, uint64_t target_now, lawn2_timer **out_head) {
+    if (target_now <= l->now) {
+        if (out_head) *out_head = NULL;
+        return 0;
+    }
+    l->now = target_now;
+    return collect_expired(l, target_now, out_head);
 }
 
 uint64_t lawn2_size(lawn2 *l) { 

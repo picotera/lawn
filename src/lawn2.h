@@ -7,6 +7,10 @@
  *   - O(1) handle delete via node links -> no element-id hashmap, no key hash
  *   - open-addressing TTL->queue table -> no per-entry malloc (vs libbpf chain)
  *   - next_expiration lower bound      -> O(1) empty ticks (as in src/lawn.c)
+ *   - live-bucket list                 -> Poll only visits non-empty buckets,
+ *     not the whole table (Linux timer-wheel "pending" bitmap, adapted)
+ *   - lawn2_advance                    -> jump the clock forward in one call
+ *     instead of looping lawn2_tick (Linux timer-wheel timeouts_update)
  *
  * Self-contained C11 (no glibc-only headers), portable like the wahern wheel.
  */
@@ -53,6 +57,11 @@ void     lawn2_free(lawn2 *l);          /* frees the store, not caller nodes */
 void     lawn2_add(lawn2 *l, lawn2_timer *n, uint64_t ttl); // Push, O(1)
 void     lawn2_del(lawn2 *l, lawn2_timer *n); // Pull, O(1)
 uint64_t lawn2_tick(lawn2 *l, lawn2_timer **out_head); // Poll: +1 tick, return #expired and populate list of exired nodes in out_head
+/* Poll: jump straight to target_now (must be >= lawn2_now(l), else a no-op)
+ * and fire everything due by then. Same result as calling lawn2_tick()
+ * (target_now - lawn2_now(l)) times, but O(non-empty buckets) instead of
+ * O(elapsed ticks) when nothing is due in between. */
+uint64_t lawn2_advance(lawn2 *l, uint64_t target_now, lawn2_timer **out_head);
 uint64_t lawn2_size(lawn2 *l);
 uint64_t lawn2_now(lawn2 *l);
 

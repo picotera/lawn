@@ -2,6 +2,7 @@
 #include "cts.h"
 #include "util.h"
 #include "impl/lawn2_clamped.h"
+#include "lawn2.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -93,6 +94,42 @@ static void overflow_exact(void) {
     printf("  overflow/exact-tick: all impls fire large TTLs on the exact tick\n");
 }
 
+/* lawn2_advance must fire exactly what repeated lawn2_tick calls would have,
+ * just in one jump instead of one call per elapsed tick. */
+static void advance_matches_tick(void) {
+    const size_t n = 3000;
+    const uint64_t target = 60000;
+    uint64_t *ttls = malloc(n * sizeof *ttls);
+    gen_ttls(ttls, n, 50000, 500, WL_UNIFORM, 7);
+
+    timer_store *st_a = init_store(), *st_b = init_store();
+    lawn2 *a = lawn2_new(), *b = lawn2_new();
+    for (size_t i = 0; i < n; i++) {
+        lawn2_add(a, timer_for(st_a, i), ttls[i]);
+        lawn2_add(b, timer_for(st_b, i), ttls[i]);
+    }
+    free(ttls);
+
+    uint64_t fired_tick = 0;
+    for (uint64_t t = 0; t < target; t++) fired_tick += lawn2_tick(a, NULL);
+    uint64_t fired_adv = lawn2_advance(b, target, NULL);
+
+    if (fired_tick != fired_adv || lawn2_size(a) != lawn2_size(b) ||
+        lawn2_now(a) != lawn2_now(b)) {
+        fprintf(stderr,
+                "FAIL advance_matches_tick: tick_fired=%llu adv_fired=%llu "
+                "size_a=%llu size_b=%llu now_a=%llu now_b=%llu\n",
+                (unsigned long long)fired_tick, (unsigned long long)fired_adv,
+                (unsigned long long)lawn2_size(a), (unsigned long long)lawn2_size(b),
+                (unsigned long long)lawn2_now(a), (unsigned long long)lawn2_now(b));
+        exit(1);
+    }
+    lawn2_free(a); lawn2_free(b);
+    destroy_store(st_a); destroy_store(st_b);
+    printf("  lawn2_advance: matches %llu ticks of lawn2_tick over %zu timers\n",
+           (unsigned long long)target, n);
+}
+
 /* Pure-function invariants for the Linux-kernel-style TTL clamp used by
  * lawn2clamp (impl/lawn2_clamped.c): never fires early, and an already
  * bucket-aligned ttl is a fixed point. Covers every level, including the
@@ -152,6 +189,7 @@ int main(void) {
     differential(0);
     differential(7);
     overflow_exact();
+    advance_matches_tick();
     clamp_math();
     clamp_wiring();
     printf("ALL C CORRECTNESS TESTS PASSED\n");
