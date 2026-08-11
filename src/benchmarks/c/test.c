@@ -2,7 +2,6 @@
 #include "cts.h"
 #include "util.h"
 #include "impl/lawn2_clamped.h"
-#include "lawn2.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -94,40 +93,72 @@ static void overflow_exact(void) {
     printf("  overflow/exact-tick: all impls fire large TTLs on the exact tick\n");
 }
 
-/* lawn2_advance must fire exactly what repeated lawn2_tick calls would have,
- * just in one jump instead of one call per elapsed tick. */
+/* vt->advance must produce identical wheel state to reaching the same point
+ * via repeated vt->tick() calls, not just matching totals right after the
+ * jump: a cascading structure that strands a timer in the wrong (level,
+ * slot) still reports a correct size() and a correct fired-so-far count at
+ * that instant, and only diverges once ticking continues (this is exactly
+ * how impl/wheel_exact.c's we_advance bug survived the old, lawn2-only,
+ * snapshot-only version of this test). For every adapter exposing a
+ * non-NULL advance, build two stores with an identical staggered arrival
+ * set -- control reaches each arrival via tick(), subject via advance(),
+ * exactly mirroring pre_lifecycle's own staggering -- then tick both
+ * forward together past every deadline and assert every single per-tick
+ * fired count and live size match, not just the final ones. */
 static void advance_matches_tick(void) {
-    const size_t n = 3000;
-    const uint64_t target = 60000;
-    uint64_t *ttls = malloc(n * sizeof *ttls);
-    gen_ttls(ttls, n, 50000, 500, WL_UNIFORM, 7);
+    const size_t n = 2000;
+    const uint64_t ttl_span = 20000;
+    const uint64_t stagger_w = 10000;   /* below every ttl: nothing due during preload */
+    const uint64_t run_ticks = 50000;   /* past every deadline (max is 2*stagger_w+ttl_span, i.e. the latest arrival plus the largest shifted ttl), plus slack */
 
-    timer_store *st_a = init_store(), *st_b = init_store();
-    lawn2 *a = lawn2_new(), *b = lawn2_new();
-    for (size_t i = 0; i < n; i++) {
-        lawn2_add(a, timer_for(st_a, i), ttls[i]);
-        lawn2_add(b, timer_for(st_b, i), ttls[i]);
+    uint64_t *ttls = malloc(n * sizeof *ttls);
+    gen_ttls(ttls, n, ttl_span, 200, WL_UNIFORM, 11);
+    /* raw gen_ttls output can be as low as span/distinct, well below
+     * stagger_w, so every ttl needs shifting up to guarantee
+     * arrival + ttl > stagger_w for every timer (i.e. nothing due
+     * during the staggered preload below). */
+    for (size_t i = 0; i < n; i++) ttls[i] += stagger_w;
+
+    int checked = 0;
+    for (int a = 0; a < cts_nalgos; a++) {
+        const cts_vtable *vt = cts_algos[a];
+        if (!vt->advance) continue;
+        checked++;
+
+        cts_store *ctrl = vt->create();
+        cts_store *subj = vt->create();
+
+        uint64_t ctrl_now = 0;
+        for (size_t i = 0; i < n; i++) {
+            uint64_t arrival = (uint64_t)(((double)i / (double)n) * (double)stagger_w);
+            while (ctrl_now < arrival) { vt->tick(ctrl); ctrl_now++; }
+            vt->advance(subj, arrival);
+            vt->start(ctrl, i, ttls[i]);
+            vt->start(subj, i, ttls[i]);
+        }
+        while (ctrl_now < stagger_w) { vt->tick(ctrl); ctrl_now++; }
+        vt->advance(subj, stagger_w);
+
+        for (uint64_t t = 0; t < run_ticks; t++) {
+            uint64_t fc = vt->tick(ctrl);
+            uint64_t fs = vt->tick(subj);
+            if (fc != fs || vt->size(ctrl) != vt->size(subj)) {
+                fprintf(stderr,
+                        "FAIL advance_matches_tick: %s tick %llu: ctrl_fired=%llu subj_fired=%llu "
+                        "ctrl_size=%llu subj_size=%llu\n",
+                        vt->name, (unsigned long long)t,
+                        (unsigned long long)fc, (unsigned long long)fs,
+                        (unsigned long long)vt->size(ctrl), (unsigned long long)vt->size(subj));
+                exit(1);
+            }
+        }
+        vt->destroy(ctrl);
+        vt->destroy(subj);
     }
     free(ttls);
-
-    uint64_t fired_tick = 0;
-    for (uint64_t t = 0; t < target; t++) fired_tick += lawn2_tick(a, NULL);
-    uint64_t fired_adv = lawn2_advance(b, target, NULL);
-
-    if (fired_tick != fired_adv || lawn2_size(a) != lawn2_size(b) ||
-        lawn2_now(a) != lawn2_now(b)) {
-        fprintf(stderr,
-                "FAIL advance_matches_tick: tick_fired=%llu adv_fired=%llu "
-                "size_a=%llu size_b=%llu now_a=%llu now_b=%llu\n",
-                (unsigned long long)fired_tick, (unsigned long long)fired_adv,
-                (unsigned long long)lawn2_size(a), (unsigned long long)lawn2_size(b),
-                (unsigned long long)lawn2_now(a), (unsigned long long)lawn2_now(b));
-        exit(1);
-    }
-    lawn2_free(a); lawn2_free(b);
-    destroy_store(st_a); destroy_store(st_b);
-    printf("  lawn2_advance: matches %llu ticks of lawn2_tick over %zu timers\n",
-           (unsigned long long)target, n);
+    printf("  advance_matches_tick: %d impls' advance() reproduces the full tick-driven "
+           "expiry sequence over %llu ticks after a staggered preload\n",
+           checked, (unsigned long long)run_ticks);
 }
 
 /* Pure-function invariants for the Linux-kernel-style TTL clamp used by

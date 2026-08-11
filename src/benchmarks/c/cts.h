@@ -36,6 +36,6 @@ extern const cts_vtable cts_lawn2_clamped_vtable;
 extern const cts_vtable cts_wahern_vtable;
 extern const cts_vtable cts_naive_vtable;
 extern const cts_vtable cts_heap_vtable;
-extern const cts_vtable cts_linuxwheel_vtable;
+extern const cts_vtable cts_wheel_exact_vtable;
 
 #endif /* CTS_H */

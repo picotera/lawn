@@ -31,13 +31,13 @@ STYLE = {
     "wahern":     ("Timer Wheel",            "#ff7f0e", "^"),
     "naive":      ("Naive ring",             "#2ca02c", "D"),
     "heap":       ("Binary heap",            "#9467bd", "v"),
-    "linuxwheel": ("Non-cascading wheel",    "#d62728", "*"),
+    "wheelexact": ("Exact lazily-cascading wheel", "#d62728", "*"),
 }
 ORDER = ["lawn", "lawn2", "wahern", "naive"]
-# Adapters added later, to test the wheel-generalization and mixed-workload
-# questions. Kept out of ORDER (and so out of every other figure below) to
-# keep the paper's main Lawn-vs-wheel-vs-naive story uncluttered.
-ORDER_ALL = ORDER + ["heap", "linuxwheel"]
+# heap/wheelexact were added later to test the wheel-generalization
+# question; kept out of every figure to keep the paper's main
+# Lawn-vs-wheel-vs-naive story uncluttered (their numbers are reported in
+# the repository, per the Methodology section, not plotted here).
 
 
 def read(fname):
@@ -48,6 +48,8 @@ def read(fname):
 def by_algo(rows, xcol, ycol, scol=None):
     d = {}
     for r in rows:
+        if r.get("status", "ok") != "ok":
+            continue
         d.setdefault(r["algo"], ([], [], []))
         d[r["algo"]][0].append(float(r[xcol]))
         d[r["algo"]][1].append(float(r[ycol]))
@@ -218,6 +220,8 @@ def extended_memory_plot():
     rows = read("memory_n.csv") + read("memory_n_huge.csv")
     d = {}
     for r in rows:
+        if r.get("status", "ok") != "ok":
+            continue
         n = float(r["n"])
         d.setdefault(r["algo"], ([], []))
         d[r["algo"]][0].append(n)
@@ -248,10 +252,12 @@ def workload_expiry_plot():
     (single TTL and ten distinct TTLs from expiry_distinct_ttls.csv, bursty and
     uniform arrivals from expiry_workload.csv)."""
     categories = ["Single TTL", "Few TTLs (10)", "Bursty", "Uniform"]
-    d1 = [r for r in read("expiry_distinct_ttls.csv") if r["distinct_ttls"] == "1"]
-    d10 = [r for r in read("expiry_distinct_ttls.csv") if r["distinct_ttls"] == "10"]
-    wb = [r for r in read("expiry_workload.csv") if r["workload"] == "bursty"]
-    wu = [r for r in read("expiry_workload.csv") if r["workload"] == "uniform"]
+    distinct_ttls = [r for r in read("expiry_distinct_ttls.csv") if r.get("status", "ok") == "ok"]
+    workload = [r for r in read("expiry_workload.csv") if r.get("status", "ok") == "ok"]
+    d1 = [r for r in distinct_ttls if r["distinct_ttls"] == "1"]
+    d10 = [r for r in distinct_ttls if r["distinct_ttls"] == "10"]
+    wb = [r for r in workload if r["workload"] == "bursty"]
+    wu = [r for r in workload if r["workload"] == "uniform"]
 
     def get(rows, algo):
         return next(float(r["mean_ns"]) for r in rows if r["algo"] == algo)
@@ -375,23 +381,20 @@ def density_vs_n_plot():
 
 
 def lifecycle_plot():
-    """Realistic mixed-workload latency vs n, main baseline (results/
-    lifecycle_n.csv, 1K-1M): pre-fills n background timers, then times a
-    fixed sequence of randomly interleaved insert/delete/tick operations,
-    unlike every other figure here, which isolates one operation type.
-    Solid = mean, dashed = p99, to show both typical and tail cost in one
-    plot. Extended further in Section VII.G once (results/
-    lifecycle_n_huge.csv) once machine memory pressure allowed it."""
-    # Full population range: 1K-1M (lifecycle_n.csv) plus the extended
-    # 2M-200M sweep (lifecycle_n_huge.csv) when present. Both halves use the
-    # same fixed TTL span, so there is no density seam at the join.
+    """Realistic mixed-workload latency vs n, 1K-1M (results/
+    lifecycle_n.csv): pre-fills n background timers, then times a fixed
+    sequence of randomly interleaved insert/delete/tick operations, unlike
+    every other figure here, which isolates one operation type. Solid =
+    mean, dashed = p99, to show both typical and tail cost in one plot.
+    Scoped to this range because the article's own prose is scoped to it
+    (see Section on Realistic Mixed Workload) -- if a huge-N run is ever
+    added back, update that prose before extending this figure's range,
+    not just this function, or the two will silently disagree again."""
     rows = read("lifecycle_n.csv")
-    if os.path.exists(os.path.join(RESULTS, "lifecycle_n_huge.csv")):
-        rows = rows + read("lifecycle_n_huge.csv")
     mean_d = by_algo(rows, "n", "mean_ns", "std_ns")
     p99_d = by_algo(rows, "n", "p99_ns")
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    for algo in ORDER_ALL:
+    for algo in ORDER:
         if algo not in mean_d:
             continue
         label, color, marker = STYLE[algo]
@@ -426,7 +429,7 @@ def extended_lifecycle_plot():
     mean_d = by_algo(rows, "n", "mean_ns", "std_ns")
     p99_d = by_algo(rows, "n", "p99_ns")
     fig, ax = plt.subplots(figsize=(6.4, 4.2))
-    for algo in ORDER_ALL:
+    for algo in ORDER:
         if algo not in mean_d:
             continue
         label, color, marker = STYLE[algo]

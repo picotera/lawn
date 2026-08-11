@@ -21,9 +21,10 @@ from `cts.h`; the harness (`benchmark.c`, `test.c`, `util.c`) is impl-agnostic.
 - `naive` - a single-level growing ring (the textbook overflow victim).
 - `heap` - a binary heap adapter, added to test wheel-generalization beyond
   `wahern`.
-- `linuxwheel` - a non-cascading wheel adapter, added for the same reason.
+- `wheelexact` - an exact hierarchical wheel with lazy cascading, added for
+  the same reason.
 
-`heap` and `linuxwheel` are included in the correctness gate and in raw sweep
+`heap` and `wheelexact` are included in the correctness gate and in raw sweep
 output, but are kept out of the article's main figures (see
 `article/src/make_figures.py`'s `ORDER` vs `ORDER_ALL`) to keep the primary
 Lawn-vs-wheel-vs-naive story uncluttered.

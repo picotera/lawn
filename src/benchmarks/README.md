@@ -5,8 +5,8 @@ timing-wheel and other baselines across the same parameter space, plus
 distinct-TTL and lifecycle-cost crossover studies.
 
 The suite runs every algorithm (Lawn, an optimized allocation-free Lawn2,
-William Ahern's timing wheel, a naive ring, plus a binary heap and a
-non-cascading wheel) behind a common adapter on an integer **logical clock**
+William Ahern's timing wheel, a naive ring, plus a binary heap and an
+exact lazily-cascading wheel) behind a common adapter on an integer **logical clock**
 (deterministic, wall-clock-free), measures one operation per function (insert,
 delete, tick-advance, expiry, memory, tick-scan, lifecycle), and sweeps four
 axes: timer count N, TTL span, distinct-TTL count, and workload pattern. A

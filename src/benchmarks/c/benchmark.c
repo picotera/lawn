@@ -15,6 +15,7 @@
 #include <sys/wait.h>
 #include <sys/mman.h>
 #include <malloc/malloc.h>
+#include <time.h>
 
 #ifdef __APPLE__
 #include <mach/mach.h>
@@ -199,6 +200,12 @@ static void post_empty_tick(const cts_vtable *vt, cts_store *s, const scenario_t
 }
 
 /* ---- 4. Expiry Operation ---- */
+/* Effective distinct-TTL count on this op is capped at WINDOW (200):
+ * gen_ttls clamps `distinct` to the span it's given, and this op passes
+ * WINDOW as that span so every tick in the fixed measurement window has a
+ * chance to be due. Sweeping distinct_ttls past 200 on this op changes
+ * nothing -- results/expiry_distinct_ttls.csv rows above 200 are really
+ * measuring t=200, not the requested value. */
 static void setup_expiry(scenario_t *sc) {
     gen_ttls(sc->ttls, sc->p.n, WINDOW, sc->p.distinct, sc->p.workload, SEED);
 }
@@ -515,7 +522,7 @@ static double bytes_per_timer_estimate(const char *algo) {
     if (!strcmp(algo, "wahern"))     return 88.0;
     if (!strcmp(algo, "naive"))      return 38.0;
     if (!strcmp(algo, "heap"))       return 25.0;
-    if (!strcmp(algo, "linuxwheel")) return 32.0;
+    if (!strcmp(algo, "wheelexact")) return 32.0;
     return 150.0;
 }
 
@@ -655,14 +662,14 @@ static void sweep_axis(const op_t *op, const char *axis, const char *dir, bool h
     FILE *f = fopen(path, "w");
     int is_mem = (strcmp(op->name, "memory") == 0);
     const char *u = is_mem ? "bytes" : "ns";
-    fprintf(f, "%s,algo,mean_%s,std_%s,p99_%s,max_%s,n_samples,runs,warmup,seed\n", axis, u, u, u, u);
+    fprintf(f, "%s,algo,status,mean_%s,std_%s,p99_%s,max_%s,n_samples,runs,warmup,seed,need_gb,budget_gb\n", axis, u, u, u, u);
     FILE *pf = NULL;
     if (is_mem && strcmp(axis, "n") == 0) {
         char pp[512];
         if (!huge) snprintf(pp, sizeof pp, "%s/memory_per_timer_n.csv", dir);
         else snprintf(pp, sizeof pp, "%s/memory_per_timer_n_huge.csv", dir);
         pf = fopen(pp, "w");
-        fprintf(pf, "n,algo,mean_bytes,std_bytes,p99_bytes,max_bytes,n_samples,runs,warmup,seed\n");
+        fprintf(pf, "n,algo,status,mean_bytes,std_bytes,p99_bytes,max_bytes,n_samples,runs,warmup,seed,need_gb,budget_gb\n");
     }
     params_t base_params = {BASE_N, BASE_SPAN, 100, WL_UNIFORM, 0};
     if (huge) { base_params.n = BASE_N_HUGE; base_params.ttl_span = BASE_SPAN_HUGE; }
@@ -699,17 +706,23 @@ static void sweep_axis(const op_t *op, const char *axis, const char *dir, bool h
         int warmup = p.n >= (10 * BASE_N) ? 1 : 2;
         for (int a = 0; a < cts_nalgos; a++) {
             if (results[a].success) {
-                fprintf(f, "%s,%s,%.4f,%.4f,%.4f,%.4f,%zu,%d,%d,%d\n", valstr, cts_algos[a]->name, 
-                        results[a].agg.mean, results[a].agg.std, results[a].agg.p99, results[a].agg.max, 
-                        results[a].agg.n, runs, warmup, SEED);
+                fprintf(f, "%s,%s,ok,%.4f,%.4f,%.4f,%.4f,%zu,%d,%d,%d,%.3f,%.3f\n", valstr, cts_algos[a]->name,
+                        results[a].agg.mean, results[a].agg.std, results[a].agg.p99, results[a].agg.max,
+                        results[a].agg.n, runs, warmup, SEED, results[a].need_gb, results[a].budget_gb);
                 if (pf) {
-                    fprintf(pf, "%s,%s,%.4f,%.4f,%.4f,%.4f,%zu,%d,%d,%d\n", valstr, cts_algos[a]->name, 
-                            results[a].agg.mean / (double)p.n, results[a].agg.std / (double)p.n, 
-                            results[a].agg.p99 / (double)p.n, results[a].agg.max / (double)p.n, 
-                            results[a].agg.n, runs, warmup, SEED);
+                    fprintf(pf, "%s,%s,ok,%.4f,%.4f,%.4f,%.4f,%zu,%d,%d,%d,%.3f,%.3f\n", valstr, cts_algos[a]->name,
+                            results[a].agg.mean / (double)p.n, results[a].agg.std / (double)p.n,
+                            results[a].agg.p99 / (double)p.n, results[a].agg.max / (double)p.n,
+                            results[a].agg.n, runs, warmup, SEED, results[a].need_gb, results[a].budget_gb);
                 }
                 printf("DONE %-8s %-13s axis=%-13s value=%s n=%s\n", op->name, cts_algos[a]->name, axis, valstr, n_str);
             } else {
+                fprintf(f, "%s,%s,skip,0,0,0,0,0,%d,%d,%d,%.3f,%.3f\n", valstr, cts_algos[a]->name,
+                        runs, warmup, SEED, results[a].need_gb, results[a].budget_gb);
+                if (pf) {
+                    fprintf(pf, "%s,%s,skip,0,0,0,0,0,%d,%d,%d,%.3f,%.3f\n", valstr, cts_algos[a]->name,
+                            runs, warmup, SEED, results[a].need_gb, results[a].budget_gb);
+                }
                 printf("SKIP %-8s %-13s axis=%-13s value=%s n=%s (needs ~%.1fGB, safe budget ~%.1fGB)\n",
                     op->name, cts_algos[a]->name, axis, valstr, n_str, results[a].need_gb, results[a].budget_gb);
             }
@@ -788,9 +801,9 @@ static void sweep_inflection_curve(FILE *f, const char *regime_name, size_t n, u
         double ratio_life  = lm.lawn2.mean > 0 ? lm.wahern.mean / lm.lawn2.mean : 0;
         double ratio_p99   = lm.lawn2.p99 > 0 ? lm.wahern.p99 / lm.lawn2.p99 : 0;
 
-        fprintf(f, "%s,%zu,%llu,%llu,%.6g,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f\n",
-                regime_name, n, (unsigned long long)t, (unsigned long long)span, (double)t / n, 
-                tm.lawn, tm.lawn2, tm.wahern, tm.naive, ratio_tick, ratio2_tick, 
+        fprintf(f, "%ld,%s,%zu,%llu,%llu,%.6g,%.2f,%.2f,%.2f,%.2f,%.4f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f,%.4f,%.2f,%.2f\n",
+                (long)time(NULL), regime_name, n, (unsigned long long)t, (unsigned long long)span, (double)t / n,
+                tm.lawn, tm.lawn2, tm.wahern, tm.naive, ratio_tick, ratio2_tick,
                 lm.lawn2.mean, lm.wahern.mean, ratio_life, lm.lawn2.p99, lm.wahern.p99, ratio_p99, lm.lawn2.max, lm.wahern.max);
         
         if (ratio_life > 0 && prev_ratio_life > 0 && !xover_life && ((prev_ratio_life - 1.0) * (ratio_life - 1.0) < 0)) {
@@ -833,7 +846,7 @@ static void run_inflection(const char *dir) {
     snprintf(path, sizeof path, "%s/inflection.csv", dir);
     FILE *f = fopen(path, "w");
     
-    fprintf(f, "span_regime,N,t,ttl_span,t_over_N,lawn_pertick_ns,lawn2_pertick_ns,wahern_pertick_ns,naive_pertick_ns,"
+    fprintf(f, "unix_ts,span_regime,N,t,ttl_span,t_over_N,lawn_pertick_ns,lawn2_pertick_ns,wahern_pertick_ns,naive_pertick_ns,"
                "ratio_lawn_over_wahern,ratio_lawn2_over_wahern,"
                "lawn2_life_ns,wahern_life_ns,ratio_wahern_over_lawn2_life,"
                "lawn2_life_p99,wahern_life_p99,ratio_wahern_over_lawn2_life_p99,"

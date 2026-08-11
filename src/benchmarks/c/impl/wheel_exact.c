@@ -1,14 +1,17 @@
-/* Hierarchical timer wheel modeled on the Linux 4.8+ kernel timer-wheel
- * redesign: timers are placed once, directly, into the (level, slot) their
- * remaining delta belongs to. No periodic full-cascade sweep. A level's
- * slot is only redistributed ("cascaded") the moment that level's own
- * granularity boundary is crossed, which is rare at high levels, giving
- * amortized O(1) per tick. This is an independent implementation of the
- * published algorithm (Varghese & Lauck, TW/TW87 in the bib), not a
- * literal kernel port.
- * 8 levels x 64 slots/level (6 bits/level, matching the kernel's
- * LVL_BITS/LVL_SIZE). Slots are dynamic id arrays with id-indexed
- * metadata for O(1) swap-removal, mirroring impl/naive.c's pattern. */
+/* An exact hierarchical timer wheel with lazy cascading: timers are placed
+ * once, directly, into the (level, slot) their remaining delta belongs to,
+ * and a level's slot is only redistributed ("cascaded") the moment that
+ * level's own granularity boundary is crossed. This preserves exact
+ * expiry -- unlike the real Linux 4.8+ kernel redesign, whose defining move
+ * is the opposite trade: it eliminates cascades entirely by rounding
+ * expiry *up* to the level's granularity instead (see calc_index in
+ * article/src/c/wheel/kernel_impls/linux_kern_timer.c). This is an
+ * independent implementation of the published cascading-wheel algorithm
+ * (Varghese & Lauck, TW/TW87 in the bib), not a Linux-kernel model and not
+ * a literal port of anything.
+ * 8 levels x 64 slots/level (6 bits/level). Slots are dynamic id arrays
+ * with id-indexed metadata for O(1) swap-removal, mirroring
+ * impl/naive.c's pattern. */
 #include "cts.h"
 #include <stdlib.h>
 
@@ -35,11 +38,11 @@ struct cts_store {
     uint64_t  live;
 };
 
-static cts_store *lw_create(void) {
+static cts_store *we_create(void) {
     return calloc(1, sizeof(struct cts_store));
 }
 
-static void lw_destroy(cts_store *s) {
+static void we_destroy(cts_store *s) {
     for (int l = 0; l < NUM_LEVELS; l++)
         for (unsigned i = 0; i < LVL_SIZE; i++)
             free(s->levels[l][i].ids);
@@ -94,14 +97,14 @@ static void place(struct cts_store *s, uint64_t id) {
     s->id_pos[id] = pos;
 }
 
-static void lw_start(cts_store *s, uint64_t id, uint64_t ttl) {
+static void we_start(cts_store *s, uint64_t id, uint64_t ttl) {
     ensure_id_cap(s, id);
     s->id_expire[id] = s->now + ttl;
     place(s, id);
     s->live++;
 }
 
-static int lw_stop(cts_store *s, uint64_t id) {
+static int we_stop(cts_store *s, uint64_t id) {
     if (id >= s->id_cap || s->id_lvl[id] < 0) return 0;
     slot_t *sl = &s->levels[s->id_lvl[id]][s->id_idx[id]];
     slot_remove_at(sl, s->id_pos[id], s);
@@ -110,7 +113,7 @@ static int lw_stop(cts_store *s, uint64_t id) {
     return 1;
 }
 
-static uint64_t lw_tick(cts_store *s) {
+static uint64_t we_tick(cts_store *s) {
     s->now++;
     /* Cascade only the levels whose own granularity boundary was just
      * crossed, breaking at the first level that hasn't wrapped yet. */
@@ -134,14 +137,23 @@ static uint64_t lw_tick(cts_store *s) {
     return fired;
 }
 
-static uint64_t lw_size(cts_store *s) { return s->live; }
+static uint64_t we_size(cts_store *s) { return s->live; }
 
-/* Jump the clock forward with no expiry/cascade processing (used for a
- * staggered preload, where target stays below every live deadline so
- * nothing is due and no level boundary is crossed). */
-static void lw_advance(cts_store *s, uint64_t target) { s->now = target; }
+/* Jump the clock forward to target by running the already-correct we_tick
+ * once per elapsed tick, so every cascade boundary the jump crosses is
+ * processed exactly as it would be under tick-by-tick advancement. Costs
+ * O(target - now) rather than O(levels), but advance() is only ever called
+ * from pre_lifecycle's untimed preload setup (benchmark.c), never from a
+ * timed payload, so this has no effect on any reported latency. Anything
+ * that fires during the jump (shouldn't happen under the staggered-preload
+ * precondition that target stays below every live deadline, but handled
+ * defensively) is drained and counted down in live via we_tick's own
+ * bookkeeping, mirroring wahern_advance's same defensive drain. */
+static void we_advance(cts_store *s, uint64_t target) {
+    while (s->now < target) we_tick(s);
+}
 
-const cts_vtable cts_linuxwheel_vtable = {
-    "linuxwheel", lw_create, lw_destroy,
-    lw_start, lw_stop, lw_tick, lw_size, lw_advance,
+const cts_vtable cts_wheel_exact_vtable = {
+    "wheelexact", we_create, we_destroy,
+    we_start, we_stop, we_tick, we_size, we_advance,
 };
