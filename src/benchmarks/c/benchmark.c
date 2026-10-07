@@ -9,19 +9,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <unistd.h>
 #include <string.h>
 #include <math.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
-#include <malloc/malloc.h>
 #include <time.h>
 
 #ifdef __APPLE__
 #include <mach/mach.h>
 #include <mach/mach_host.h>
+#include <malloc/malloc.h>
 #elif defined(__linux__)
 #include <sys/sysinfo.h>
+#include <malloc.h>
 #endif
 
 #define SEED   1234
@@ -226,16 +228,24 @@ static size_t payload_expiry(const cts_vtable *vt, cts_store *s, const scenario_
 /* ---- 5. Memory Operation ---- */
 static size_t payload_memory(const cts_vtable *vt, cts_store *s_unused, const scenario_t *sc, void *run_state, double *out) {
     (void)s_unused; (void)run_state;
+#ifdef __APPLE__
     malloc_statistics_t before, after;
     malloc_zone_statistics(malloc_default_zone(), &before);
-    
     cts_store *s = vt->create();
     for (size_t i = 0; i < sc->p.n; i++) vt->start(s, i, sc->ttls[i]);
-    
     malloc_zone_statistics(malloc_default_zone(), &after);
     vt->destroy(s);
-    
     double bytes = (double)after.size_in_use - (double)before.size_in_use;
+#else
+    /* glibc analog of malloc_zone_statistics: mallinfo2 has size_t fields,
+       so it does not overflow past 2 GB the way the legacy mallinfo does. */
+    struct mallinfo2 before = mallinfo2();
+    cts_store *s = vt->create();
+    for (size_t i = 0; i < sc->p.n; i++) vt->start(s, i, sc->ttls[i]);
+    struct mallinfo2 after = mallinfo2();
+    vt->destroy(s);
+    double bytes = (double)after.uordblks - (double)before.uordblks;
+#endif
     out[0] = bytes < 0 ? 0 : bytes;
     return 1;
 }

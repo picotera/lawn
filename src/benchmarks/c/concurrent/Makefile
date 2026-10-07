@@ -1,6 +1,6 @@
 # Multithreaded concurrency benchmark (real pthreads, wall-clock).
 CC      = cc
-CFLAGS  = -std=c11 -O2 -pthread -I.. -I../../.. -I../../../utils -I../../../../article/src/c/wheel \
+CFLAGS  = -std=c11 -D_GNU_SOURCE -O2 -pthread -I.. -I../../.. -I../../../utils -I../../../../article/src/c/wheel \
           -DWHEEL_NUM=6
 LDFLAGS = -lm
 

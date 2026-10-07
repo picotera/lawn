@@ -18,7 +18,9 @@
 !**/*.json
 !**/*.txt
 !**/*.png
+!**/*.sh
 !src/benchmarks/c/results/inflection.csv
+!src/benchmarks/c/results/*_x86.csv
 
 /site
 style.c
